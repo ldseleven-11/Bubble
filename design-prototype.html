@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DesktopPet UI 设计原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════ */
+:root {
+  /* Warm palette */
+  --pet-primary: #FF6B4A;
+  --pet-primary-light: #FF8A6E;
+  --pet-primary-dark: #E5553A;
+  --pet-secondary: #4A9EFF;
+  --pet-secondary-light: #6CB3FF;
+  --pet-success: #34C759;
+  --pet-warning: #FFB94A;
+  --pet-error: #FF4545;
+
+  /* Neutrals - warm tinted */
+  --bg-canvas: #FAF8F5;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #FEFEFE;
+  --bg-muted: #F5F2EE;
+  --bg-subtle: #EDE9E3;
+  --border-default: #E8E2DA;
+  --border-light: #F0EBE5;
+  --border-focus: var(--pet-primary);
+
+  /* Text */
+  --text-primary: #2D2A26;
+  --text-secondary: #7A746C;
+  --text-tertiary: #A9A29A;
+  --text-inverse: #FFFFFF;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(45,42,38,0.06), 0 1px 2px rgba(45,42,38,0.04);
+  --shadow-md: 0 4px 12px rgba(45,42,38,0.08), 0 2px 4px rgba(45,42,38,0.04);
+  --shadow-lg: 0 8px 24px rgba(45,42,38,0.10), 0 4px 8px rgba(45,42,38,0.05);
+  --shadow-xl: 0 16px 48px rgba(45,42,38,0.12), 0 8px 16px rgba(45,42,38,0.06);
+  --shadow-glow: 0 0 0 3px rgba(255,107,74,0.15);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+}
+
+/* ═══════════════════════════════════════════
+   GLOBAL RESET & BASE
+   ═══════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Noto Sans SC', -apple-system, sans-serif;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE LAYOUT - DESIGN SHOWCASE
+   ═══════════════════════════════════════════ */
+.showcase {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-3xl) var(--space-xl);
+}
+.showcase-header {
+  text-align: center;
+  margin-bottom: var(--space-3xl);
+}
+.showcase-header h1 {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: 36px;
+  color: var(--text-primary);
+  margin-bottom: var(--space-sm);
+  letter-spacing: -0.5px;
+}
+.showcase-header h1 span { color: var(--pet-primary); }
+.showcase-header p {
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 300;
+}
+.showcase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2xl);
+  align-items: start;
+}
+.showcase-section {
+  margin-bottom: var(--space-3xl);
+}
+.showcase-section > h2 {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.showcase-section > h2::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: var(--pet-primary);
+  border-radius: 2px;
+}
+.section-full { grid-column: 1 / -1; }
+
+/* ═══════════════════════════════════════════
+   COMPONENT 1: NOTIFICATION BUBBLE
+   ═══════════════════════════════════════════ */
+.bubble-demo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: var(--bg-muted);
+  border-radius: var(--radius-xl);
+  position: relative;
+}
+.notification-bubble {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  max-width: 320px;
+  cursor: pointer;
+  transition: transform var(--duration-normal) var(--ease-spring),
+              box-shadow var(--duration-normal) var(--ease-out);
+  animation: bubbleIn 0.5s var(--ease-spring) both;
+}
+.notification-bubble:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: var(--shadow-xl);
+}
+.notification-bubble:active {
+  transform: scale(0.98);
+}
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.notif-accent {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3.5px;
+  border-radius: 0 2px 2px 0;
+}
+.notif-accent.blue { background: linear-gradient(180deg, var(--pet-secondary), #3D8AE8); }
+.notif-accent.orange { background: linear-gradient(180deg, var(--pet-primary), var(--pet-primary-dark)); }
+.notif-accent.error { background: linear-gradient(180deg, var(--pet-error), #D63636); }
+
+.notif-content {
+  padding: var(--space-md) var(--space-lg);
+  padding-left: calc(var(--space-lg) + 4px);
+  position: relative;
+}
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+}
+.notif-source {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.notif-time {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.notif-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notif-text strong {
+  font-weight: 600;
+  color: var(--pet-primary-dark);
+}
+.notif-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.notif-footer .dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--pet-secondary);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+/* error variant */
+.notification-bubble.error .notif-text {
+  color: var(--pet-error);
+}
+.notification-bubble.error .notif-footer .dot {
+  background: var(--pet-error);
+}
+
+/* ═══════════════════════════════════════════
+   COMPONENT 2: CHAT / REPLY PANEL
+   ═══════════════════════════════════════════ */
+.chat-panel {
+  width: 360px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: panelSlideUp 0.4s var(--ease-spring) both;
+}
+@keyframes panelSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.chat-header {
+  padding: var(--space-lg) var(--space-xl);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(180deg, var(--bg-surface-raised), var(--bg-surface));
+}
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+.chat-avatar {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #FFE0D6, #FFB8A0);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.chat-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.chat-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.chat-close {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.chat-close:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.chat-messages {
+  flex: 1;
+  padding: var(--space-lg) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-muted);
+  background-image: radial-gradient(circle at 20% 80%, rgba(255,107,74,0.03) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 20%, rgba(74,158,255,0.03) 0%, transparent 50%);
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-pill);
+}
+
+.msg {
+  display: flex;
+  gap: var(--space-sm);
+  animation: msgIn 0.3s var(--ease-spring) both;
+}
+.msg.incoming { align-self: flex-start; }
+.msg.outgoing { align-self: flex-end; flex-direction: row-reverse; }
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-avatar {
+  width: 24px; height: 24px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.msg-avatar.pet {
+  background: linear-gradient(135deg, #FFE0D6, #FFB8A0);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+.msg-avatar.user {
+  background: linear-gradient(135deg, #D6E8FF, #A0C8FF);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+}
+
+.msg-bubble {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 240px;
+  word-break: break-word;
+}
+.msg.incoming .msg-bubble {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--space-xs);
+  box-shadow: var(--shadow-sm);
+}
+.msg.outgoing .msg-bubble {
+  background: linear-gradient(135deg, var(--pet-primary), var(--pet-primary-light));
+  color: var(--text-inverse);
+  border-bottom-right-radius: var(--space-xs);
+  box-shadow: 0 2px 8px rgba(255,107,74,0.2);
+}
+
+.msg-time {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-xs);
+}
+.msg.outgoing .msg-time { text-align: right; }
+
+/* Typing indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+.typing-dots {
+  display: flex; gap: 3px;
+}
+.typing-dots span {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: typingBounce 1.4s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.typing-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Input area */
+.chat-input-area {
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-light);
+  padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.chat-input-row:focus-within {
+  border-color: var(--pet-primary);
+  box-shadow: var(--shadow-glow);
+  background: var(--bg-surface);
+}
+.chat-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: var(--space-sm) 0;
+  outline: none;
+  resize: none;
+  min-height: 20px;
+  max-height: 80px;
+}
+.chat-input::placeholder { color: var(--text-tertiary); }
+
+.chat-send-btn {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--pet-primary);
+  color: white;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+.chat-send-btn:hover {
+  background: var(--pet-primary-dark);
+  transform: scale(1.05);
+}
+.chat-send-btn:active { transform: scale(0.95); }
+.chat-send-btn.disabled {
+  background: var(--border-default);
+  cursor: default;
+  transform: none;
+}
+.chat-send-btn svg { width: 16px; height: 16px; }
+.chat-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-xs);
+}
+.chat-hint span {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.chat-hint kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  padding: 1px 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  color: var(--text-tertiary);
+}
+
+/* ═══════════════════════════════════════════
+   COMPONENT 3: SETTINGS WINDOW
+   ═══════════════════════════════════════════ */
+.settings-window {
+  width: 680px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+  animation: settingsIn 0.4s var(--ease-out) both;
+}
+@keyframes settingsIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.settings-layout {
+  display: flex;
+  min-height: 480px;
+}
+
+/* Sidebar */
+.settings-sidebar {
+  width: 180px;
+  background: var(--bg-muted);
+  border-right: 1px solid var(--border-light);
+  padding: var(--space-xl) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+.settings-sidebar-title {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 0 var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1.5px solid transparent;
+}
+.sidebar-item:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.sidebar-item.active {
+  background: var(--bg-surface);
+  color: var(--pet-primary);
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+.sidebar-icon {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.sidebar-item.active .sidebar-icon {
+  background: linear-gradient(135deg, rgba(255,107,74,0.1), rgba(255,107,74,0.05));
+}
+
+/* Settings content */
+.settings-content {
+  flex: 1;
+  padding: var(--space-xl) var(--space-2xl);
+  overflow-y: auto;
+  max-height: 480px;
+}
+.settings-content::-webkit-scrollbar { width: 5px; }
+.settings-content::-webkit-scrollbar-track { background: transparent; }
+.settings-content::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-pill);
+}
+
+.settings-page-title {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xl);
+}
+
+/* Setting groups */
+.setting-group {
+  margin-bottom: var(--space-xl);
+}
+.setting-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-md);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.setting-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* Toggle switch */
+.toggle {
+  width: 40px; height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--border-default);
+  cursor: pointer;
+  position: relative;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.toggle.on { background: var(--pet-primary); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: white;
+  top: 2px; left: 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform var(--duration-normal) var(--ease-spring);
+}
+.toggle.on::after { transform: translateX(18px); }
+
+/* Select / Dropdown */
+.setting-select {
+  font-family: inherit;
+  font-size: 12px;
+  padding: var(--space-xs) var(--space-md);
+  padding-right: var(--space-xl);
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A746C' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color var(--duration-fast);
+}
+.setting-select:focus {
+  border-color: var(--pet-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+/* Slider */
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+.slider-track {
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
+  position: relative;
+  cursor: pointer;
+}
+.slider-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--pet-primary), var(--pet-primary-light));
+  width: 45%;
+}
+.slider-thumb {
+  position: absolute;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid var(--pet-primary);
+  top: 50%; left: 45%;
+  transform: translate(-50%, -50%);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+.slider-thumb:hover { transform: translate(-50%, -50%) scale(1.2); }
+.slider-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 36px;
+  text-align: center;
+}
+
+/* Input field */
+.setting-input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: var(--space-xs) var(--space-md);
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  width: 160px;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.setting-input:focus {
+  border-color: var(--pet-primary);
+  box-shadow: var(--shadow-glow);
+}
+.setting-input::placeholder { color: var(--text-tertiary); }
+
+/* Pet skins grid */
+.skin-grid {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+.skin-card {
+  width: 80px; height: 88px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-light);
+  background: var(--bg-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-spring);
+  position: relative;
+}
+.skin-card:hover {
+  border-color: var(--pet-primary-light);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.skin-card.active {
+  border-color: var(--pet-primary);
+  background: linear-gradient(180deg, rgba(255,107,74,0.05), rgba(255,107,74,0.02));
+}
+.skin-card.active::after {
+  content: '✓';
+  position: absolute;
+  top: 4px; right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pet-primary);
+}
+.skin-preview {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.skin-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.skin-card.add {
+  border-style: dashed;
+  border-color: var(--border-default);
+}
+.skin-card.add .skin-preview {
+  background: transparent;
+  font-size: 20px;
+  color: var(--text-tertiary);
+}
+
+/* AI Mode cards */
+.ai-mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.ai-mode-card {
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  position: relative;
+}
+.ai-mode-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+.ai-mode-card.active {
+  border-color: var(--pet-primary);
+  background: linear-gradient(135deg, rgba(255,107,74,0.03), rgba(255,138,110,0.02));
+  box-shadow: 0 0 0 3px rgba(255,107,74,0.08);
+}
+.ai-mode-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+.ai-mode-radio {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border-default);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--duration-fast);
+}
+.ai-mode-card.active .ai-mode-radio {
+  border-color: var(--pet-primary);
+}
+.ai-mode-card.active .ai-mode-radio::after {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--pet-primary);
+  animation: radioIn 0.2s var(--ease-spring) both;
+}
+@keyframes radioIn { from { transform: scale(0); } to { transform: scale(1); } }
+.ai-mode-info { flex: 1; }
+.ai-mode-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.ai-mode-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+.ai-mode-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-free { background: #E8F5E9; color: #2E7D32; }
+.badge-api { background: #E3F2FD; color: #1565C0; }
+.badge-pro { background: #FFF3E0; color: #E65100; }
+
+.ai-mode-expand {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-light);
+  display: none;
+}
+.ai-mode-card.active .ai-mode-expand { display: block; }
+.expand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+.expand-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Connection status steps */
+.connection-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.conn-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.conn-step-icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.conn-step-icon.pending { background: var(--bg-subtle); color: var(--text-tertiary); }
+.conn-step-icon.success { background: #E8F5E9; color: var(--pet-success); }
+.conn-step-icon.error { background: #FFEBEE; color: var(--pet-error); }
+.conn-step-icon.loading {
+  background: #FFF8E1;
+  color: var(--pet-warning);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Bottom actions */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-xl);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-muted);
+}
+.btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+.btn:active { transform: scale(0.97); }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1.5px solid var(--border-default);
+}
+.btn-ghost:hover {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--pet-primary), var(--pet-primary-light));
+  color: white;
+  box-shadow: 0 2px 8px rgba(255,107,74,0.25);
+}
+.btn-primary:hover {
+  box-shadow: 0 4px 12px rgba(255,107,74,0.35);
+  transform: translateY(-1px);
+}
+
+/* ═══════════════════════════════════════════
+   COMPONENT 4: QUICK BUBBLE (普通气泡)
+   ═══════════════════════════════════════════ */
+.bubble-simple {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--bg-surface);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  animation: bubblePop 0.35s var(--ease-spring) both;
+  position: relative;
+}
+.bubble-simple::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px; height: 10px;
+  background: var(--bg-surface);
+  border-radius: 2px;
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 2px 2px 4px rgba(45,42,38,0.06);
+}
+@keyframes bubblePop {
+  0% { opacity: 0; transform: scale(0.5) translateY(8px); }
+  60% { transform: scale(1.05) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.bubble-emoji {
+  font-size: 15px;
+  animation: wiggle 2s var(--ease-out) infinite;
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(-8deg); }
+  30% { transform: rotate(8deg); }
+  45% { transform: rotate(0); }
+}
+
+/* ═══════════════════════════════════════════
+   COMPONENT 5: ONBOARDING BUBBLE
+   ═══════════════════════════════════════════ */
+.onboarding-bubble {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-lg) var(--space-xl);
+  max-width: 280px;
+  position: relative;
+  animation: onboardIn 0.5s var(--ease-spring) both;
+}
+@keyframes onboardIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.onboarding-step {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-lg);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+.onboarding-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin-bottom: var(--space-md);
+}
+.onboarding-text em {
+  font-style: normal;
+  color: var(--pet-primary);
+  font-weight: 600;
+}
+.onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.onboarding-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--border-default);
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.onboarding-dot.active {
+  background: var(--pet-primary);
+  width: 18px;
+  border-radius: 3px;
+}
+.onboarding-next {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pet-primary);
+  cursor: pointer;
+  transition: opacity var(--duration-fast);
+}
+.onboarding-next:hover { opacity: 0.7; }
+
+/* ═══════════════════════════════════════════
+   COMPONENT 6: TOAST / SENT CONFIRMATION
+   ═══════════════════════════════════════════ */
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--text-primary);
+  color: var(--text-inverse);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  animation: toastIn 0.3s var(--ease-spring) both;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-icon {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--pet-success);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px;
+}
+
+/* ═══════════════════════════════════════════
+   PET CHARACTER (decorative)
+   ═══════════════════════════════════════════ */
+.pet-character {
+  width: 64px; height: 64px;
+  margin: 0 auto;
+  position: relative;
+}
+.pet-body {
+  width: 48px; height: 48px;
+  background: linear-gradient(135deg, #FFD93D, #FF914D);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  margin: 0 auto;
+  position: relative;
+  animation: petBreathe 3s var(--ease-out) infinite;
+}
+@keyframes petBreathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.pet-eyes {
+  position: absolute;
+  top: 40%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 8px;
+}
+.pet-eye {
+  width: 6px; height: 8px;
+  background: #2D2A26;
+  border-radius: 50%;
+  animation: petBlink 4s infinite;
+}
+@keyframes petBlink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+.pet-cheek {
+  position: absolute;
+  width: 8px; height: 5px;
+  background: rgba(255,107,74,0.4);
+  border-radius: 50%;
+  top: 55%;
+}
+.pet-cheek.left { left: 12%; }
+.pet-cheek.right { right: 12%; }
+.pet-mouth {
+  position: absolute;
+  bottom: 28%;
+  left: 50%;
+  width: 6px; height: 3px;
+  border-bottom: 2px solid #2D2A26;
+  border-radius: 0 0 50% 50%;
+  transform: translateX(-50%);
+}
+.pet-shadow {
+  width: 36px; height: 8px;
+  background: rgba(45,42,38,0.08);
+  border-radius: 50%;
+  margin: 4px auto 0;
+  animation: shadowBreathe 3s var(--ease-out) infinite;
+}
+@keyframes shadowBreathe {
+  0%, 100% { transform: scale(1); opacity: 0.08; }
+  50% { transform: scale(0.85); opacity: 0.05; }
+}
+
+/* ═══════════════════════════════════════════
+   DEMO CONTAINERS
+   ═══════════════════════════════════════════ */
+.demo-container {
+  background: var(--bg-muted);
+  border-radius: var(--radius-xl);
+  padding: var(--space-2xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-xl);
+  position: relative;
+  overflow: hidden;
+}
+.demo-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 0% 100%, rgba(255,107,74,0.04), transparent 40%),
+    radial-gradient(circle at 100% 0%, rgba(74,158,255,0.04), transparent 40%);
+  pointer-events: none;
+}
+.demo-label {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-lg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ═══════════════════════════════════════════
+   INTERACTIVE: TAB SWITCHING
+   ═══════════════════════════════════════════ */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ═══════════════════════════════════════════
+   COLOR PALETTE DISPLAY
+   ═══════════════════════════════════════════ */
+.palette-row {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-top: var(--space-md);
+}
+.palette-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.swatch-color {
+  width: 48px; height: 48px;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+}
+.swatch-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .showcase-grid { grid-template-columns: 1fr; }
+  .section-full { grid-column: 1; }
+  .settings-window { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="showcase">
+  <div class="showcase-header">
+    <h1>Desktop<span>Pet</span> UI Redesign</h1>
+    <p>交互原型 · 温暖精致风格 · 2026.03</p>
+  </div>
+
+  <!-- ════════════════════════════════
+       SECTION 1: BUBBLES
+       ════════════════════════════════ -->
+  <div class="showcase-grid">
+    <div class="showcase-section">
+      <h2>通知气泡</h2>
+      <div class="demo-container">
+        <span class="demo-label">Notification Bubbles</span>
+
+        <!-- Pet character -->
+        <div class="pet-character" style="margin-bottom: 8px;">
+          <div class="pet-body">
+            <div class="pet-eyes">
+              <div class="pet-eye"></div>
+              <div class="pet-eye"></div>
+            </div>
+            <div class="pet-cheek left"></div>
+            <div class="pet-cheek right"></div>
+            <div class="pet-mouth"></div>
+          </div>
+          <div class="pet-shadow"></div>
+        </div>
+
+        <!-- Normal notification -->
+        <div class="notification-bubble" style="animation-delay: 0.1s">
+          <div class="notif-accent blue"></div>
+          <div class="notif-content">
+            <div class="notif-header">
+              <span class="notif-source">钉钉 · 产品群</span>
+              <span class="notif-time">刚刚</span>
+            </div>
+            <div class="notif-text"><strong>张明：</strong>@all 今天下午 3 点产品评审，请大家准时参加</div>
+            <div class="notif-footer">
+              <span class="dot"></span>
+              <span>点击回复</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Urgent notification -->
+        <div class="notification-bubble" style="animation-delay: 0.3s">
+          <div class="notif-accent orange"></div>
+          <div class="notif-content">
+            <div class="notif-header">
+              <span class="notif-source">钉钉 · 李伟</span>
+              <span class="notif-time">2分钟前</span>
+            </div>
+            <div class="notif-text">PRD 文档我已经更新了，你看看 v1.2 的改动</div>
+            <div class="notif-footer">
+              <span class="dot"></span>
+              <span>点击回复</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error notification -->
+        <div class="notification-bubble error" style="animation-delay: 0.5s">
+          <div class="notif-accent error"></div>
+          <div class="notif-content">
+            <div class="notif-header">
+              <span class="notif-source">系统消息</span>
+              <span class="notif-time">刚刚</span>
+            </div>
+            <div class="notif-text">消息发送失败，请检查网络连接</div>
+            <div class="notif-footer">
+              <span class="dot"></span>
+              <span>点击前往设置</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════
+         SECTION 2: SIMPLE BUBBLES
+         ════════════════════════════════ -->
+    <div class="showcase-section">
+      <h2>普通气泡 & 引导</h2>
+      <div class="demo-container" style="min-height: 380px;">
+        <span class="demo-label">Bubbles & Onboarding</span>
+
+        <div class="bubble-simple">
+          <span class="bubble-emoji">😊</span>
+          主人工作辛苦啦，记得喝水~
+        </div>
+
+        <div class="bubble-simple" style="animation-delay: 0.2s">
+          <span class="bubble-emoji">💡</span>
+          今天写了 847 行代码！
+        </div>
+
+        <div style="margin-top: 16px; width: 100%; display: flex; justify-content: center;">
+          <div class="onboarding-bubble">
+            <div class="onboarding-step">2 / 3</div>
+            <div class="onboarding-text">
+              在<em>「好友」</em>面板里添加朋友的配对码，就可以让宠物们互相串门啦！
+            </div>
+            <div class="onboarding-progress">
+              <div class="onboarding-dot"></div>
+              <div class="onboarding-dot active"></div>
+              <div class="onboarding-dot"></div>
+              <span class="onboarding-next">下一步 →</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="toast" style="animation-delay: 0.6s">
+          <div class="toast-icon">✓</div>
+          已发送
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SECTION 3: CHAT PANEL
+       ════════════════════════════════ -->
+  <div class="showcase-section section-full" style="margin-top: -16px;">
+    <h2>对话面板</h2>
+    <div class="showcase-grid" style="grid-template-columns: 360px 1fr; gap: 32px;">
+      <div class="chat-panel" id="chatPanel">
+        <div class="chat-header">
+          <div class="chat-header-left">
+            <div class="chat-avatar">🐾</div>
+            <div>
+              <div class="chat-title">皮卡丘</div>
+              <div class="chat-subtitle">回复 · 产品群 张明</div>
+            </div>
+          </div>
+          <button class="chat-close">✕</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+          <div class="msg incoming" style="animation-delay: 0.1s">
+            <div class="msg-avatar pet">🐾</div>
+            <div>
+              <div class="msg-bubble">张明在产品群说：@all 今天下午 3 点产品评审，请大家准时参加</div>
+              <div class="msg-time">14:32</div>
+            </div>
+          </div>
+          <div class="msg outgoing" style="animation-delay: 0.3s">
+            <div class="msg-avatar user">👤</div>
+            <div>
+              <div class="msg-bubble">好的，我会准时到</div>
+              <div class="msg-time">14:33</div>
+            </div>
+          </div>
+          <div class="msg incoming" style="animation-delay: 0.5s">
+            <div class="msg-avatar pet">🐾</div>
+            <div>
+              <div class="msg-bubble">已帮你回复啦~ 张明应该能看到了 ✨</div>
+              <div class="msg-time">14:33</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <div class="chat-input-row">
+            <input class="chat-input" id="chatInput" placeholder="输入消息..." />
+            <button class="chat-send-btn disabled" id="chatSendBtn">
+              <svg viewBox="0 0 16 16" fill="none"><path d="M14 2L7 9M14 2L9.5 14L7 9M14 2L2 6.5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="chat-hint">
+            <span>回复将通过钉钉发送</span>
+            <span><kbd>Enter</kbd> 发送 · <kbd>Esc</kbd> 关闭</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 24px 0;">
+        <h3 style="font-family: 'Fredoka'; font-size: 16px; margin-bottom: 16px; color: var(--text-primary);">设计改进要点</h3>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #FFE0D6, #FFB8A0); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;">💬</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">IM 风格对话历史</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">消息以气泡形式展示，区分收发方向，带头像和时间戳，更接近即时通讯的体验</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #D6E8FF, #A0C8FF); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;">✨</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">输入区域聚焦态</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">输入框聚焦时有温暖的橙色发光边框，空状态禁用发送按钮，防止误操作</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #E8F5E9, #A0E8B0); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;">🎯</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">上下文头部信息</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">顶部展示回复对象和来源（谁在哪个群说的），无需回忆上文</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #FFF3E0, #FFD6A0); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;">⌨️</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">键盘快捷键提示</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">底部 subtle 提示 Enter 发送、Esc 关闭，降低学习成本</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SECTION 4: SETTINGS WINDOW
+       ════════════════════════════════ -->
+  <div class="showcase-section section-full">
+    <h2>设置面板</h2>
+    <div class="demo-container" style="padding: 32px;">
+      <span class="demo-label">Settings Window</span>
+      <div class="settings-window">
+        <div class="settings-layout">
+          <!-- Sidebar -->
+          <div class="settings-sidebar">
+            <div class="settings-sidebar-title">设置</div>
+            <div class="sidebar-item active" onclick="switchTab(0)">
+              <div class="sidebar-icon">🐾</div>
+              <span>宠物</span>
+            </div>
+            <div class="sidebar-item" onclick="switchTab(1)">
+              <div class="sidebar-icon">🧠</div>
+              <span>AI 能力</span>
+            </div>
+            <div class="sidebar-item" onclick="switchTab(2)">
+              <div class="sidebar-icon">💭</div>
+              <span>碎碎念</span>
+            </div>
+            <div class="sidebar-item" onclick="switchTab(3)">
+              <div class="sidebar-icon">⚙️</div>
+              <span>高级</span>
+            </div>
+          </div>
+
+          <!-- Content area -->
+          <div class="settings-content">
+            <!-- TAB 0: PET -->
+            <div class="tab-content active" id="tab0">
+              <div class="settings-page-title">宠物</div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">形象</div>
+                <div class="skin-grid">
+                  <div class="skin-card active">
+                    <div class="skin-preview">⚡</div>
+                    <div class="skin-name">皮卡丘</div>
+                  </div>
+                  <div class="skin-card">
+                    <div class="skin-preview">🧊</div>
+                    <div class="skin-name">自定义 1</div>
+                  </div>
+                  <div class="skin-card">
+                    <div class="skin-preview">🌸</div>
+                    <div class="skin-name">自定义 2</div>
+                  </div>
+                  <div class="skin-card add">
+                    <div class="skin-preview">+</div>
+                    <div class="skin-name">添加</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">基本信息</div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">宠物名字</div>
+                    <div class="setting-desc">给你的宠物起个名字吧</div>
+                  </div>
+                  <input class="setting-input" value="皮卡丘" />
+                </div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">性格预设</div>
+                    <div class="setting-desc">影响宠物的对话风格</div>
+                  </div>
+                  <select class="setting-select">
+                    <option>🎲 随机</option>
+                    <option>😄 活泼</option>
+                    <option selected>🌸 温柔</option>
+                    <option>🧠 智能</option>
+                    <option>✏️ 自定义</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">外观</div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">宠物尺寸</div>
+                    <div class="setting-desc">调整宠物在桌面上的大小</div>
+                  </div>
+                  <div class="slider-container">
+                    <div class="slider-track">
+                      <div class="slider-fill"></div>
+                      <div class="slider-thumb"></div>
+                    </div>
+                    <div class="slider-value">120px</div>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">工作效果</div>
+                    <div class="setting-desc">工作时的动画效果</div>
+                  </div>
+                  <select class="setting-select">
+                    <option selected>🔄 转圈圈</option>
+                    <option>↔️ 摇晃</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">行为</div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">监控模式</div>
+                    <div class="setting-desc">宠物如何感知你的工作状态</div>
+                  </div>
+                  <select class="setting-select">
+                    <option selected>Claude 工作监控</option>
+                    <option>鼠标键盘输入</option>
+                  </select>
+                </div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">活动范围</div>
+                    <div class="setting-desc">宠物的活动区域</div>
+                  </div>
+                  <select class="setting-select">
+                    <option selected>全屏</option>
+                    <option>左半屏</option>
+                    <option>右半屏</option>
+                    <option>原地踏步</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 1: AI CAPABILITY -->
+            <div class="tab-content" id="tab1">
+              <div class="settings-page-title">AI 能力</div>
+              <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">选择宠物的智能模式，三种模式互斥，切换后立即生效</p>
+
+              <div class="ai-mode-cards">
+                <div class="ai-mode-card" onclick="selectAIMode(this)">
+                  <div class="ai-mode-header">
+                    <div class="ai-mode-radio"></div>
+                    <div class="ai-mode-info">
+                      <div class="ai-mode-name">基础模式</div>
+                      <div class="ai-mode-desc">使用内置语料库，无需配置，开箱即用</div>
+                    </div>
+                    <span class="ai-mode-badge badge-free">免费</span>
+                  </div>
+                </div>
+
+                <div class="ai-mode-card active" onclick="selectAIMode(this)">
+                  <div class="ai-mode-header">
+                    <div class="ai-mode-radio"></div>
+                    <div class="ai-mode-info">
+                      <div class="ai-mode-name">聪明模式</div>
+                      <div class="ai-mode-desc">接入 LLM API，宠物变得更聪明</div>
+                    </div>
+                    <span class="ai-mode-badge badge-api">API</span>
+                  </div>
+                  <div class="ai-mode-expand">
+                    <div class="expand-row">
+                      <span class="expand-label">AI 提供商</span>
+                      <select class="setting-select">
+                        <option>OpenAI</option>
+                        <option selected>Claude</option>
+                        <option>DashScope</option>
+                      </select>
+                    </div>
+                    <div class="expand-row">
+                      <span class="expand-label">API Key</span>
+                      <input class="setting-input" type="password" value="sk-•••••••••••" style="width: 180px;" />
+                    </div>
+                    <div class="expand-row" style="margin-bottom: 0;">
+                      <span class="expand-label">状态</span>
+                      <span style="font-size: 12px; color: var(--pet-success); font-weight: 500;">● 已连接</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="ai-mode-card" onclick="selectAIMode(this)">
+                  <div class="ai-mode-header">
+                    <div class="ai-mode-radio"></div>
+                    <div class="ai-mode-info">
+                      <div class="ai-mode-name">助手模式</div>
+                      <div class="ai-mode-desc">接入 OpenClaw Agent，获得最强大的 AI 助手能力</div>
+                    </div>
+                    <span class="ai-mode-badge badge-pro">PRO</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 2: MURMUR -->
+            <div class="tab-content" id="tab2">
+              <div class="settings-page-title">碎碎念</div>
+              <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5;">配置 AI 服务来让宠物更智能地自言自语</p>
+
+              <div class="setting-group">
+                <div class="setting-group-title">AI 服务</div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">AI 提供商</div>
+                  </div>
+                  <select class="setting-select">
+                    <option>OpenAI</option>
+                    <option selected>Claude</option>
+                    <option>DashScope</option>
+                  </select>
+                </div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">API Key</div>
+                  </div>
+                  <input class="setting-input" type="password" placeholder="输入你的 API Key" style="width: 200px;" />
+                </div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">测试连接</div>
+                    <div class="setting-desc">验证 API Key 是否有效</div>
+                  </div>
+                  <button class="btn btn-ghost" onclick="this.textContent='测试中...'; setTimeout(()=>this.textContent='✓ 连接成功', 1000)">测试</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 3: ADVANCED -->
+            <div class="tab-content" id="tab3">
+              <div class="settings-page-title">高级</div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">钉钉集成</div>
+                <div class="setting-row">
+                  <div>
+                    <div class="setting-label">钉钉通知</div>
+                    <div class="setting-desc">接收并展示钉钉消息通知</div>
+                  </div>
+                  <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">OpenClaw 连接</div>
+                <div class="setting-row">
+                  <div><div class="setting-label">Gateway Host</div></div>
+                  <input class="setting-input" value="localhost" />
+                </div>
+                <div class="setting-row">
+                  <div><div class="setting-label">Gateway Port</div></div>
+                  <input class="setting-input" value="18789" style="width: 80px;" />
+                </div>
+                <div class="setting-row">
+                  <div><div class="setting-label">Token</div></div>
+                  <input class="setting-input" type="password" value="•••••" style="width: 180px;" />
+                </div>
+                <div class="setting-row">
+                  <div><div class="setting-label">DingTalk User ID</div></div>
+                  <input class="setting-input" placeholder="输入用户 ID" style="width: 180px;" />
+                </div>
+              </div>
+
+              <div class="setting-group">
+                <div class="setting-group-title">连接状态</div>
+                <div class="connection-steps">
+                  <div class="conn-step">
+                    <div class="conn-step-icon success">✓</div>
+                    <span>OpenClaw 网关连接</span>
+                  </div>
+                  <div class="conn-step">
+                    <div class="conn-step-icon success">✓</div>
+                    <span>身份识别</span>
+                  </div>
+                  <div class="conn-step">
+                    <div class="conn-step-icon loading">⟳</div>
+                    <span>钉钉订阅中...</span>
+                  </div>
+                </div>
+                <button class="btn btn-primary" style="margin-top: 16px; width: 100%;">重新连接</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-footer">
+          <button class="btn btn-ghost">恢复默认</button>
+          <button class="btn btn-primary">保存设置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════
+       SECTION 5: COLOR PALETTE
+       ════════════════════════════════ -->
+  <div class="showcase-section section-full">
+    <h2>设计规范</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+      <div>
+        <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-tertiary); margin-bottom: 12px;">色彩</div>
+        <div class="palette-row">
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--pet-primary)"></div>
+            <span class="swatch-label">#FF6B4A</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--pet-secondary)"></div>
+            <span class="swatch-label">#4A9EFF</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--pet-success)"></div>
+            <span class="swatch-label">#34C759</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--pet-warning)"></div>
+            <span class="swatch-label">#FFB94A</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--pet-error)"></div>
+            <span class="swatch-label">#FF4545</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--bg-muted)"></div>
+            <span class="swatch-label">#F5F2EE</span>
+          </div>
+          <div class="palette-swatch">
+            <div class="swatch-color" style="background: var(--text-primary)"></div>
+            <span class="swatch-label">#2D2A26</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-tertiary); margin-bottom: 12px;">字体</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: baseline; gap: 16px;">
+            <span style="font-family: 'Fredoka'; font-size: 22px; font-weight: 600; color: var(--text-primary);">Fredoka</span>
+            <span style="font-size: 11px; color: var(--text-tertiary);">标题 / 品牌</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 16px;">
+            <span style="font-family: 'Noto Sans SC'; font-size: 15px; font-weight: 400; color: var(--text-primary);">Noto Sans SC 思源黑体</span>
+            <span style="font-size: 11px; color: var(--text-tertiary);">正文 / 界面</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 16px;">
+            <span style="font-family: 'JetBrains Mono'; font-size: 13px; color: var(--text-primary);">JetBrains Mono</span>
+            <span style="font-size: 11px; color: var(--text-tertiary);">代码 / 数值</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tab switching for settings
+function switchTab(index) {
+  document.querySelectorAll('.sidebar-item').forEach((item, i) => {
+    item.classList.toggle('active', i === index);
+  });
+  document.querySelectorAll('.tab-content').forEach((tab, i) => {
+    tab.classList.toggle('active', i === index);
+  });
+}
+
+// AI mode selection
+function selectAIMode(card) {
+  document.querySelectorAll('.ai-mode-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+}
+
+// Chat input interaction
+const chatInput = document.getElementById('chatInput');
+const chatSendBtn = document.getElementById('chatSendBtn');
+const chatMessages = document.getElementById('chatMessages');
+
+chatInput.addEventListener('input', () => {
+  chatSendBtn.classList.toggle('disabled', !chatInput.value.trim());
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && chatInput.value.trim()) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+chatSendBtn.addEventListener('click', () => {
+  if (chatInput.value.trim()) sendMessage();
+});
+
+function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  // Add outgoing message
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg outgoing';
+  msgDiv.innerHTML = `
+    <div class="msg-avatar user">👤</div>
+    <div>
+      <div class="msg-bubble">${text}</div>
+      <div class="msg-time">${new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</div>
+    </div>
+  `;
+  chatMessages.appendChild(msgDiv);
+  chatInput.value = '';
+  chatSendBtn.classList.add('disabled');
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  // Typing indicator
+  const typingDiv = document.createElement('div');
+  typingDiv.className = 'typing-indicator';
+  typingDiv.innerHTML = `
+    <div class="msg-avatar pet" style="width:24px;height:24px;border-radius:6px;font-size:12px;">🐾</div>
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+    <span class="typing-label">正在输入...</span>
+  `;
+  chatMessages.appendChild(typingDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  // Simulated reply
+  setTimeout(() => {
+    typingDiv.remove();
+    const replies = [
+      '收到啦！我帮你处理 ✨',
+      '好的主人，已经发送出去了~',
+      '没问题！消息已送达 📮',
+      '嗯嗯，我记住了！'
+    ];
+    const replyDiv = document.createElement('div');
+    replyDiv.className = 'msg incoming';
+    replyDiv.innerHTML = `
+      <div class="msg-avatar pet">🐾</div>
+      <div>
+        <div class="msg-bubble">${replies[Math.floor(Math.random() * replies.length)]}</div>
+        <div class="msg-time">${new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})}</div>
+      </div>
+    `;
+    chatMessages.appendChild(replyDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }, 1200);
+}
+
+// Toggle interactions
+document.querySelectorAll('.toggle').forEach(toggle => {
+  toggle.addEventListener('click', () => toggle.classList.toggle('on'));
+});
+
+// Notification bubble click
+document.querySelectorAll('.notification-bubble').forEach(bubble => {
+  bubble.addEventListener('click', () => {
+    bubble.style.transform = 'scale(0.97)';
+    setTimeout(() => bubble.style.transform = '', 150);
+  });
+});
+</script>
+
+</body>
+</html>
