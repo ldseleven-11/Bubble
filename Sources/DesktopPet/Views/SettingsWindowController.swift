@@ -73,7 +73,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
             backing: .buffered,
             defer: false
         )
-        win.title = "DesktopPet 设置"
+        win.title = "BubblePet 设置"
         win.center()
         win.delegate = self
         win.level = .floating

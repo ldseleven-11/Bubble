@@ -253,7 +253,7 @@ class PetView: NSView {
     }
 
     private func buildContextMenu() -> NSMenu {
-        let menu = NSMenu(title: "DesktopPet")
+        let menu = NSMenu(title: "BubblePet")
 
         let chatItem = NSMenuItem(title: "对话", action: #selector(openChat), keyEquivalent: "")
         chatItem.target = self
@@ -269,7 +269,7 @@ class PetView: NSView {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let quitItem = NSMenuItem(title: "退出 DesktopPet", action: #selector(quitApp), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "退出 BubblePet", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
 

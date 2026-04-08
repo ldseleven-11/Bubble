@@ -59,7 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PetViewDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.statusItem = item
         if let button = item.button {
-            button.title = " DesktopPet "
+            button.title = " BubblePet "
         }
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))

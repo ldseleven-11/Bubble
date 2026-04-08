@@ -4,19 +4,20 @@ set -euo pipefail
 # DesktopPet macOS App 打包脚本
 # 用法: bash build.sh
 
-APP_NAME="DesktopPet"
+APP_NAME="DesktopPet"       # 可执行文件名，须与 Package.swift target 一致
+DISPLAY_NAME="BubblePet"    # 用户可见的应用名
 BUNDLE_ID="com.desktoppet.app"
 VERSION="1.0.0"
 MIN_MACOS="12.0"
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${PROJECT_DIR}/.build"
-APP_DIR="${PROJECT_DIR}/${APP_NAME}.app"
-DMG_NAME="${APP_NAME}.dmg"
+APP_DIR="${PROJECT_DIR}/${DISPLAY_NAME}.app"
+DMG_NAME="${DISPLAY_NAME}.dmg"
 DMG_PATH="${PROJECT_DIR}/${DMG_NAME}"
 RESOURCES_SRC="${PROJECT_DIR}/Sources/DesktopPet/Resources"
 
-echo "=== DesktopPet 打包脚本 ==="
+echo "=== ${DISPLAY_NAME} 打包脚本 ==="
 echo ""
 
 # ---- 1. 编译 Release (arm64) ----
@@ -78,7 +79,7 @@ cat > "${APP_DIR}/Contents/Info.plist" << PLIST
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>DesktopPet</string>
+    <string>BubblePet</string>
     <key>CFBundleVersion</key>
     <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
@@ -92,7 +93,7 @@ cat > "${APP_DIR}/Contents/Info.plist" << PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>DesktopPet 需要访问终端来执行命令。</string>
+    <string>BubblePet 需要访问终端来执行命令。</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
@@ -109,7 +110,7 @@ echo "  ✓ 签名完成"
 echo "[5/5] 创建 DMG..."
 
 # 清理旧的（先卸载可能挂载的旧 DMG）
-hdiutil detach "/Volumes/${APP_NAME}" 2>/dev/null || true
+hdiutil detach "/Volumes/${DISPLAY_NAME}" 2>/dev/null || true
 rm -f "${DMG_PATH}"
 
 # 创建临时目录
@@ -124,7 +125,7 @@ cp -R "${APP_DIR}" "${DMG_TEMP}/"
 ln -s /Applications "${DMG_TEMP}/Applications"
 
 # 创建 DMG
-hdiutil create -volname "${APP_NAME}" \
+hdiutil create -volname "${DISPLAY_NAME}" \
     -srcfolder "${DMG_TEMP}" \
     -ov -format UDZO \
     "${DMG_PATH}"
