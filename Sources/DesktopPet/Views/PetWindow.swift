@@ -6,7 +6,7 @@ class PetWindow: NSWindow {
         super.init(contentRect: contentRect, styleMask: .borderless, backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
-        level = .floating
+        level = .statusBar
         hasShadow = false
         acceptsMouseMovedEvents = true
     }

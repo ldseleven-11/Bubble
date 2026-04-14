@@ -103,6 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PetViewDelegate {
         startBubbleTimer()
         startCareTimer()
 
+
         // 设置监控回调
         ClaudeMonitor.shared.onStateChange = { [weak self] isWorking in
             self?.handleWorkingStateChange(isWorking)
@@ -219,7 +220,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, PetViewDelegate {
             if notification.isError {
                 let alert = NSAlert()
                 alert.messageText = "消息发送失败"
-                alert.informativeText = "\(notification.summary)\n\n请检查 OpenClaw 连接设置是否正确。"
+                let mode = SettingsManager.shared.aiMode
+                if mode == 1 {
+                    alert.informativeText = "\(notification.summary)\n\n请检查 API Key 设置是否正确。"
+                } else {
+                    alert.informativeText = "\(notification.summary)\n\n请检查 OpenClaw 连接设置是否正确。"
+                }
                 alert.addButton(withTitle: "去设置")
                 alert.addButton(withTitle: "关闭")
                 if alert.runModal() == .alertFirstButtonReturn {
@@ -272,11 +278,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, PetViewDelegate {
 
         // 注入发送回调
         ReplyInputPanel.shared.onSendMessage = { [weak self] sessionKey, message, completion in
-            guard let gw = self?.gateway else {
-                completion(false, "未连接")
-                return
+            let mode = SettingsManager.shared.aiMode
+            if mode == 1 {
+                // 聪明模式：直接调 LLM API
+                let petName = SettingsManager.shared.petName
+                let personality = PersonalityPreset.currentPrompt()
+                let prompt = """
+                你是一只桌面宠物，名叫\(petName)，陪伴主人打工。
+                你的说话风格：\(personality)
+                主人对你说："\(message)"
+                请用简短口语化的方式回复（50字以内），要符合你的性格。只输出回复内容。
+                """
+                AIEngine.shared.generate(prompt: prompt) { result in
+                    DispatchQueue.main.async {
+                        if let reply = result, !reply.isEmpty {
+                            completion(true, nil)
+                            // 构造回复通知
+                            let cleaned = reply.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\u{201c}\u{201d}\u{2018}\u{2019}\u{300c}\u{300d}"))
+                            let notification = DingTalkNotification(
+                                summary: cleaned,
+                                sessionKey: sessionKey,
+                                isError: false,
+                                timestamp: Date(),
+                                originalMessage: cleaned,
+                                scene: .myDirectChat
+                            )
+                            DingTalkMonitor.shared.onNotification?(notification)
+                        } else {
+                            completion(false, "AI 未返回结果，请检查 API Key")
+                        }
+                    }
+                }
+            } else if mode == 2 {
+                // 助手模式：走 OpenClaw Gateway
+                guard let gw = self?.gateway else {
+                    completion(false, "未连接")
+                    return
+                }
+                gw.send(sessionKey: sessionKey, message: message, completion: completion)
+            } else {
+                completion(false, "未启用 AI 能力")
             }
-            gw.send(sessionKey: sessionKey, message: message, completion: completion)
         }
 
         // 测试 OpenClaw 连接回调：测试全链路（OpenClaw → 大模型 → 响应）
@@ -324,21 +366,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PetViewDelegate {
                 DingTalkMonitor.shared.start()
             }
             self?.dingtalkMenuItem?.state = newMode == 2 ? .on : .off
-        }
-
-        // 兼容旧回调（保留以防其他地方引用）
-        settingsController.onDingTalkChanged = { [weak self] enabled in
-            if enabled {
-                self?.connectGateway()
-                DingTalkMonitor.shared.start()
-            } else {
-                self?.gateway?.disconnect()
-                self?.gateway = nil
-                DingTalkMonitor.shared.stop()
-                SettingsManager.shared.petNameOverride = nil
-                SettingsManager.shared.personalityOverride = nil
-            }
-            self?.dingtalkMenuItem?.state = enabled ? .on : .off
         }
 
         // 如果助手模式已启用，立即启动

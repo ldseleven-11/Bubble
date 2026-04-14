@@ -16,6 +16,7 @@ struct FriendInfo {
     var thumbnail: Data?
     var hasApiKey: Bool
     var isOnline: Bool
+    var deliveryMessage: String? = nil  // 带话内容
 }
 
 // MARK: - 社交管理器
@@ -33,6 +34,7 @@ class SocialManager {
     private var requestTimer: Timer?
     private var visitTimer: Timer?
     private var dialogueTimer: Timer?
+    private var heartbeatTimer: Timer?
 
     // 对话
     private var currentDialogue: [(speaker: String, text: String)] = []
@@ -71,6 +73,15 @@ class SocialManager {
                 // 订阅好友状态
                 self.subscribeAllFriends()
                 NSLog("[Social] Published online status and subscribed friends: \(SettingsManager.shared.friendList.keys)")
+                // 启动心跳：每 30 秒重发在线状态，确保好友能感知
+                self.heartbeatTimer?.invalidate()
+                self.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+                    guard let self = self else { return }
+                    MQTTService.shared.publishStatus(code: self.myCode, online: true)
+                }
+            } else {
+                self.heartbeatTimer?.invalidate()
+                self.heartbeatTimer = nil
             }
         }
 
@@ -83,6 +94,8 @@ class SocialManager {
     }
 
     func stop() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
         MQTTService.shared.publishStatus(code: myCode, online: false)
         MQTTService.shared.disconnect()
         cancelAllTimers()
@@ -122,7 +135,9 @@ class SocialManager {
 
     // MARK: - 串门
 
-    func requestVisit(to friendCode: String) {
+    private var pendingDeliveryMessage: String?  // 访客方暂存带话内容
+
+    func requestVisit(to friendCode: String, message: String? = nil) {
         guard state == .idle else {
             NSLog("[Social] Cannot visit: state=\(state)")
             return
@@ -131,19 +146,24 @@ class SocialManager {
 
         state = .requesting
         visitingFriendCode = friendCode
+        pendingDeliveryMessage = message
 
         // 发送 visit_request
         let thumbnail = generateThumbnail()
+        var innerPayload: [String: Any] = [
+            "name": SettingsManager.shared.petName,
+            "personality": PersonalityPreset.currentPrompt(),
+            "thumbnail": thumbnail?.base64EncodedString() ?? "",
+            "hasApiKey": SettingsManager.shared.apiKey != nil
+        ]
+        if let msg = message {
+            innerPayload["deliveryMessage"] = msg
+        }
         let payload: [String: Any] = [
             "type": "visit_request",
             "from": myCode,
             "ts": Int(Date().timeIntervalSince1970),
-            "payload": [
-                "name": SettingsManager.shared.petName,
-                "personality": PersonalityPreset.currentPrompt(),
-                "thumbnail": thumbnail?.base64EncodedString() ?? "",
-                "hasApiKey": SettingsManager.shared.apiKey != nil
-            ]
+            "payload": innerPayload
         ]
         MQTTService.shared.publish(topic: MQTTService.shared.inboxTopic(for: friendCode), payload: payload)
 
@@ -199,6 +219,14 @@ class SocialManager {
             visitorWindow.showVisitor(thumbnailData: info.thumbnail, near: hostWin)
         }
         onVisitorArrived?()
+
+        // 来访宠物入场后，如果有带话，先展示带话气泡
+        if let msg = info.deliveryMessage, !msg.isEmpty {
+            // 等入场动画完成后(~2秒)展示带话
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.visitorWindow.showBubble(text: "hi~ 主人让我带话过来：\(msg)", isDelivery: true)
+            }
+        }
 
         // 30 秒无消息超时
         resetVisitTimeout()
@@ -356,7 +384,8 @@ class SocialManager {
             // 从 topic 提取 code（更可靠，topic = desktoppet/v1/{code}/status）
             let parts = topic.components(separatedBy: "/")
             let statusCode = parts.count >= 3 ? parts[parts.count - 2] : from
-            handleStatusMessage(type: type, from: statusCode)
+            let statusName = json["name"] as? String
+            handleStatusMessage(type: type, from: statusCode, name: statusName)
             return
         }
 
@@ -384,10 +413,17 @@ class SocialManager {
         }
     }
 
-    private func handleStatusMessage(type: String, from: String) {
-        NSLog("[Social] Status: \(from) is \(type)")
+    private func handleStatusMessage(type: String, from: String, name: String?) {
+        NSLog("[Social] Status: \(from) is \(type), name=\(name ?? "nil")")
         if type == "online" {
             onlineFriends.insert(from)
+            // 更新好友名字（如果对方携带了 name 且是好友）
+            if let name = name, !name.isEmpty, SettingsManager.shared.isFriend(from) {
+                let current = SettingsManager.shared.friendList[from]
+                if current == nil || current == from {
+                    SettingsManager.shared.addFriend(code: from, name: name)
+                }
+            }
         } else {
             onlineFriends.remove(from)
         }
@@ -408,7 +444,8 @@ class SocialManager {
             personality: payload["personality"] as? String ?? "",
             thumbnail: (payload["thumbnail"] as? String).flatMap { Data(base64Encoded: $0) },
             hasApiKey: payload["hasApiKey"] as? Bool ?? false,
-            isOnline: true
+            isOnline: true,
+            deliveryMessage: payload["deliveryMessage"] as? String
         )
 
         acceptVisit(from: info)
@@ -428,7 +465,8 @@ class SocialManager {
             personality: payload["personality"] as? String ?? "",
             thumbnail: (payload["thumbnail"] as? String).flatMap { Data(base64Encoded: $0) },
             hasApiKey: payload["hasApiKey"] as? Bool ?? false,
-            isOnline: true
+            isOnline: true,
+            deliveryMessage: nil
         )
 
         // 更新好友名字
@@ -451,8 +489,10 @@ class SocialManager {
             isOnline: true
         )
 
-        // 延迟 2 秒等入场动画
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+        // 延迟等入场动画(2秒) + 带话展示(8秒，如有)
+        let extraDelay: TimeInterval = pendingDeliveryMessage != nil ? 8 : 0
+        pendingDeliveryMessage = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2 + extraDelay) { [weak self] in
             self?.startDialogue(visitorInfo: myInfo, hostInfo: hostInfo, amIVisitor: true)
         }
     }

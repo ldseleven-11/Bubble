@@ -1,7 +1,7 @@
 import AppKit
 
 // MARK: - 设置窗口
-class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
+class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate, NSTextViewDelegate {
     var window: NSWindow?
     var commandTextView: NSTextView?
     var modePopup: NSPopUpButton?
@@ -16,20 +16,18 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
     var petNameField: NSTextField?
     var personalityPopup: NSPopUpButton?
     var personalityTextView: NSTextView?
+    var personalitySection: NSView?          // 宠物性格区域（AI 能力 Tab）
+    var personalityHintLabel: NSTextField?   // 助手模式提示
     var aiProviderPopup: NSPopUpButton?
     var apiKeyField: NSSecureTextField?
     var aiStatusLabel: NSTextField?
     var aiTestResultLabel: NSTextField?
-    var dingtalkCheckbox: NSButton?
     var gatewayHostField: NSTextField?
     var gatewayPortField: NSTextField?
     var openclawTokenField: NSTextField?
-    var dingtalkUserIdField: NSTextField?
-    var dtStatusLabel: NSTextField?
     var onMonitorModeChanged: ((Int) -> Void)?
     var onPetModeChanged: ((Int) -> Void)?
     var onPetSizeChanged: (() -> Void)?
-    var onDingTalkChanged: ((Bool) -> Void)?
     var onAIModeChanged: ((Int, Int) -> Void)?  // (oldMode, newMode)
     var onTestOpenClaw: ((@escaping (Bool, String?) -> Void) -> Void)?
     var chatTestResultLabel: NSTextField?
@@ -42,6 +40,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
     private var aiConfigViews: [NSView] = []
 
     // AI 能力 Tab
+    /// 记录上次成功连接时的配置快照，用于判断是否可以跳过四步检查
+    private var lastConnectedConfig: (host: String, port: Int, token: String)?
     private var aiCapabilityScrollView: NSScrollView?
     private var aiCardExpandedPanes: [NSView?] = [nil, nil, nil]
     private var aiCardButtons: [NSButton?] = [nil, nil, nil]
@@ -83,47 +83,19 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = DT.bgSurface.cgColor
 
-        // ── 底部按钮栏 ──
-        let bottomH: CGFloat = 52
-
-        // 底部背景
-        let bottomBg = NSView(frame: NSRect(x: 0, y: 0, width: winW, height: bottomH))
-        bottomBg.wantsLayer = true
-        bottomBg.layer?.backgroundColor = DT.bgMuted.cgColor
-        rootView.addSubview(bottomBg)
-
-        let saveButton = NSButton(frame: NSRect(x: winW - 130, y: 10, width: 110, height: 32))
-        saveButton.title = "保存设置"
-        saveButton.bezelStyle = .rounded
-        saveButton.keyEquivalent = "\r"
-        saveButton.target = self
-        saveButton.action = #selector(saveSettings)
-        rootView.addSubview(saveButton)
-
-        let resetButton = NSButton(frame: NSRect(x: winW - 240, y: 10, width: 100, height: 32))
-        resetButton.title = "恢复默认"
-        resetButton.bezelStyle = .rounded
-        resetButton.target = self
-        resetButton.action = #selector(resetSettings)
-        rootView.addSubview(resetButton)
-
-        let sep = NSBox(frame: NSRect(x: 0, y: bottomH, width: winW, height: 1))
-        sep.boxType = .separator
-        rootView.addSubview(sep)
-
         // ── 侧边栏 + 内容区 ──
-        let mainH = winH - bottomH - 1
+        let mainH = winH
         let sidebarW: CGFloat = 180
         let contentW = winW - sidebarW - 1
 
         // 侧边栏背景
-        let sidebarBg = NSView(frame: NSRect(x: 0, y: bottomH + 1, width: sidebarW, height: mainH))
+        let sidebarBg = NSView(frame: NSRect(x: 0, y: 0, width: sidebarW, height: mainH))
         sidebarBg.wantsLayer = true
         sidebarBg.layer?.backgroundColor = DT.bgMuted.cgColor
         rootView.addSubview(sidebarBg)
 
         let sidebarTopPad: CGFloat = 20
-        let sidebarScroll = NSScrollView(frame: NSRect(x: 0, y: bottomH + 1, width: sidebarW, height: mainH - sidebarTopPad))
+        let sidebarScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: sidebarW, height: mainH - sidebarTopPad))
         sidebarScroll.hasVerticalScroller = false
         sidebarScroll.drawsBackground = false
 
@@ -148,12 +120,12 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         self.sidebarTableView = tableView
 
         // 竖分隔线
-        let vSep = NSBox(frame: NSRect(x: sidebarW, y: bottomH + 1, width: 1, height: mainH))
+        let vSep = NSBox(frame: NSRect(x: sidebarW, y: 0, width: 1, height: mainH))
         vSep.boxType = .separator
         rootView.addSubview(vSep)
 
         // 内容容器
-        let container = NSView(frame: NSRect(x: sidebarW + 1, y: bottomH + 1, width: contentW, height: mainH))
+        let container = NSView(frame: NSRect(x: sidebarW + 1, y: 0, width: contentW, height: mainH))
         rootView.addSubview(container)
         self.contentContainer = container
 
@@ -233,11 +205,19 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let idx = sidebarTableView?.selectedRow ?? 0
+        if idx == currentTabIndex { return }
+        // 检查当前 tab 未保存修改
+        if !checkUnsavedChanges(forTab: currentTabIndex) {
+            // 取消切换，恢复侧边栏选中
+            sidebarTableView?.selectRowIndexes(IndexSet(integer: currentTabIndex), byExtendingSelection: false)
+            return
+        }
         switchTab(to: idx)
     }
 
     private func switchTab(to idx: Int) {
         guard idx >= 0 && idx < panes.count else { return }
+        currentTabIndex = idx
         for (i, pane) in panes.enumerated() {
             pane.isHidden = (i != idx)
         }
@@ -362,6 +342,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         nameField.stringValue = SettingsManager.shared.petName
         nameField.font = NSFont.systemFont(ofSize: 13)
         nameField.placeholderString = "给宠物起个名字"
+        nameField.delegate = self
         pane.addSubview(nameField)
         self.petNameField = nameField
 
@@ -380,6 +361,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         let sPopup = NSPopUpButton(frame: NSRect(x: controlX, y: y - 3, width: 200, height: 26))
         sPopup.addItems(withTitles: ["小 (80pt)", "中 (110pt)", "大 (140pt)", "特大 (180pt)"])
         sPopup.selectItem(at: SettingsManager.shared.petSizeIndex)
+        sPopup.target = self
+        sPopup.action = #selector(petControlChanged)
         pane.addSubview(sPopup)
         self.sizePopup = sPopup
 
@@ -395,6 +378,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         let wePopup = NSPopUpButton(frame: NSRect(x: controlX, y: y - 3, width: 200, height: 26))
         wePopup.addItems(withTitles: ["快速摇晃", "转圈圈"])
         wePopup.selectItem(at: SettingsManager.shared.workingEffect)
+        wePopup.target = self
+        wePopup.action = #selector(petControlChanged)
         pane.addSubview(wePopup)
         self.workingEffectPopup = wePopup
 
@@ -410,8 +395,20 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         let rPopup = NSPopUpButton(frame: NSRect(x: controlX, y: y - 3, width: 200, height: 26))
         rPopup.addItems(withTitles: ["全屏", "左半屏", "右半屏", "左 1/3", "右 1/3", "左 1/4", "右 1/4", "原地不动"])
         rPopup.selectItem(at: SettingsManager.shared.activityRange)
+        rPopup.target = self
+        rPopup.action = #selector(petControlChanged)
         pane.addSubview(rPopup)
         self.rangePopup = rPopup
+
+        // ── 底部保存按钮 ──
+        let saveBtnY: CGFloat = 16
+        let saveBtn = NSButton(frame: NSRect(x: width - pad - 90, y: saveBtnY, width: 90, height: 32))
+        saveBtn.title = "保存"
+        saveBtn.bezelStyle = .rounded
+        saveBtn.keyEquivalent = "\r"
+        saveBtn.target = self
+        saveBtn.action = #selector(savePetSettings)
+        pane.addSubview(saveBtn)
 
         return pane
     }
@@ -469,10 +466,6 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
 
         y -= 16
 
-        let speechSep = NSBox(frame: NSRect(x: pad, y: y, width: width - pad * 2, height: 1))
-        speechSep.boxType = .separator
-        pane.addSubview(speechSep)
-
         y -= 28
 
         addSectionTitle("语录", to: pane, at: &y, pad: pad, width: width)
@@ -492,19 +485,45 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         quotesBtn.action = #selector(openQuotesFile)
         pane.addSubview(quotesBtn)
 
-        let quotesHint = NSTextField(labelWithString: "语录模式或 AI 降级时使用")
-        quotesHint.frame = NSRect(x: controlX + 128, y: y, width: 220, height: 16)
+        y -= 22
+
+        let quotesHint = NSTextField(labelWithString: "语录模式或 AI 生成失败时使用")
+        quotesHint.frame = NSRect(x: controlX, y: y, width: 260, height: 16)
         quotesHint.font = NSFont.systemFont(ofSize: 11)
         quotesHint.textColor = DT.textTertiary
         pane.addSubview(quotesHint)
+
+        // ── 底部保存按钮 ──
+        let saveBtnY: CGFloat = 16
+        let saveBtn = NSButton(frame: NSRect(x: width - pad - 90, y: saveBtnY, width: 90, height: 32))
+        saveBtn.title = "保存"
+        saveBtn.bezelStyle = .rounded
+        saveBtn.keyEquivalent = "\r"
+        saveBtn.target = self
+        saveBtn.action = #selector(saveSpeechSettings)
+        pane.addSubview(saveBtn)
 
         return pane
     }
 
     private func updateAIStatusLabel() {
-        let isAI = speechModePopup?.indexOfSelectedItem == 1
+        let selectedMode = speechModePopup?.indexOfSelectedItem ?? 0
+        let savedMode = SettingsManager.shared.speechMode
         let aiMode = SettingsManager.shared.aiMode
-        if isAI {
+
+        // 如果选中的和已保存的不一致，显示"未保存"提示
+        if selectedMode != savedMode {
+            if selectedMode == 1 {
+                aiStatusLabel?.stringValue = "切换为 AI 生成（保存后生效）"
+                aiStatusLabel?.textColor = DT.textTertiary
+            } else {
+                aiStatusLabel?.stringValue = "切换为语录文件（保存后生效）"
+                aiStatusLabel?.textColor = DT.textTertiary
+            }
+            return
+        }
+
+        if savedMode == 1 {
             if aiMode == 1 {
                 let provider = AIProvider(rawValue: SettingsManager.shared.aiProvider) ?? .claude
                 aiStatusLabel?.stringValue = "✓ 使用聪明模式（\(provider.displayName)）生成碎碎念"
@@ -529,6 +548,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
     }
 
     @objc func speechModeChanged() {
+        markDirty(tab: 2)
         let isAI = speechModePopup?.indexOfSelectedItem == 1
         let aiMode = SettingsManager.shared.aiMode
 
@@ -544,20 +564,21 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
     // MARK: - AI 能力
 
     private func buildAICapabilityPane(width: CGFloat, height: CGFloat) -> NSView {
-        let pane = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         let pad: CGFloat = 28
         let cardW = width - pad * 2
         let currentMode = SettingsManager.shared.aiMode
+
+        // 先用 height 从顶部向下布局，y 递减
         var y: CGFloat = height
 
-        addPageTitle("AI 能力", to: pane, at: &y, pad: pad)
+        addPageTitle("AI 能力", toCollection: &aiCapTempViews, width: width, at: &y, pad: pad)
 
         // 描述
         let descLabel = NSTextField(labelWithString: "选择宠物的智能模式，三种模式互斥，切换后立即生效")
         descLabel.frame = NSRect(x: pad, y: y, width: cardW, height: 16)
         descLabel.font = NSFont.systemFont(ofSize: 12)
         descLabel.textColor = DT.textSecondary
-        pane.addSubview(descLabel)
+        aiCapTempViews.append(descLabel)
         y -= 28
 
         let card0 = buildModeCard(index: 0, title: "基础模式", desc: "语料库随机说话，不能对话",
@@ -576,11 +597,173 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         for card in cards {
             y -= card.frame.height
             card.frame.origin = NSPoint(x: pad, y: y)
-            pane.addSubview(card)
+            aiCapTempViews.append(card)
             y -= gap
         }
 
+        // 宠物性格区域（仅聪明/助手模式可见）
+        let isAssistant = currentMode == 2
+        let cardInnerPad: CGFloat = 16
+        let personalityCardH: CGFloat = isAssistant ? 130 : 176
+        let personalitySec = NSView(frame: NSRect(x: 0, y: 0, width: width, height: personalityCardH + 28))
+        self.personalitySection = personalitySec
+
+        // 小标题
+        let secTitle = NSTextField(labelWithString: "宠物性格")
+        secTitle.frame = NSRect(x: pad, y: personalitySec.frame.height - 18, width: 200, height: 16)
+        secTitle.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        secTitle.textColor = DT.textTertiary
+        personalitySec.addSubview(secTitle)
+
+        // 卡片容器
+        let personalityCard = NSView(frame: NSRect(x: pad, y: 0, width: cardW, height: personalityCardH))
+        personalityCard.wantsLayer = true
+        personalityCard.layer?.cornerRadius = DT.radiusLg
+        personalityCard.layer?.borderWidth = 1.5
+        personalityCard.layer?.borderColor = DT.borderDefault.cgColor
+        personalityCard.layer?.backgroundColor = DT.bgSurface.cgColor
+        personalitySec.addSubview(personalityCard)
+
+        var py: CGFloat = personalityCardH
+
+        if isAssistant {
+            // ── 助手模式：只读卡片 ──
+            py -= cardInnerPad + 14
+            let lockIcon = NSTextField(labelWithString: "\u{1F512}")
+            lockIcon.frame = NSRect(x: cardInnerPad, y: py, width: 18, height: 16)
+            lockIcon.font = NSFont.systemFont(ofSize: 12)
+            personalityCard.addSubview(lockIcon)
+
+            let hintLabel = NSTextField(labelWithString: "来自 OpenClaw Agent 设定，不可编辑")
+            hintLabel.frame = NSRect(x: cardInnerPad + 20, y: py, width: cardW - cardInnerPad * 2 - 20, height: 16)
+            hintLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+            hintLabel.textColor = DT.textTertiary
+            personalityCard.addSubview(hintLabel)
+            self.personalityHintLabel = hintLabel
+
+            let textAreaH: CGFloat = personalityCardH - 56
+            let promptScroll = NSScrollView(frame: NSRect(x: cardInnerPad, y: cardInnerPad, width: cardW - cardInnerPad * 2, height: textAreaH))
+            promptScroll.hasVerticalScroller = true
+            promptScroll.borderType = .noBorder
+            promptScroll.wantsLayer = true
+            promptScroll.layer?.cornerRadius = DT.radiusSm
+            let promptTV = NSTextView(frame: NSRect(x: 0, y: 0, width: cardW - cardInnerPad * 2, height: textAreaH))
+            promptTV.isEditable = false
+            promptTV.isSelectable = true
+            promptTV.isRichText = false
+            promptTV.font = NSFont.systemFont(ofSize: 12)
+            promptTV.textContainerInset = NSSize(width: 2, height: 4)
+            promptTV.drawsBackground = true
+            promptTV.backgroundColor = DT.bgMuted
+            promptTV.delegate = self
+            promptScroll.documentView = promptTV
+            personalityCard.addSubview(promptScroll)
+            self.personalityTextView = promptTV
+            self.personalityPopup = nil
+
+            let ocPersonality = SettingsManager.shared.personalityOverride ?? ""
+            promptTV.string = ocPersonality.isEmpty ? "OpenClaw 未返回 Agent 性格" : ocPersonality
+            promptTV.textColor = DT.textSecondary
+        } else {
+            // ── 聪明模式：可编辑卡片 ──
+            py -= cardInnerPad + 24
+
+            let pPopup = NSPopUpButton(frame: NSRect(x: cardInnerPad, y: py - 3, width: 110, height: 24))
+            pPopup.font = NSFont.systemFont(ofSize: 12)
+            for preset in PersonalityPreset.allCases {
+                pPopup.addItem(withTitle: preset.displayName)
+            }
+            pPopup.selectItem(at: SettingsManager.shared.personalityPreset)
+            pPopup.target = self
+            pPopup.action = #selector(personalityChanged)
+            personalityCard.addSubview(pPopup)
+            self.personalityPopup = pPopup
+
+            let editHint = NSTextField(labelWithString: "选择预设或自定义性格描述")
+            editHint.frame = NSRect(x: cardInnerPad + 118, y: py - 1, width: cardW - cardInnerPad * 2 - 118, height: 16)
+            editHint.font = NSFont.systemFont(ofSize: 11)
+            editHint.textColor = DT.textTertiary
+            personalityCard.addSubview(editHint)
+            self.personalityHintLabel = editHint
+
+            let textAreaH: CGFloat = personalityCardH - 76
+            let promptScroll = NSScrollView(frame: NSRect(x: cardInnerPad, y: cardInnerPad, width: cardW - cardInnerPad * 2, height: textAreaH))
+            promptScroll.hasVerticalScroller = true
+            promptScroll.borderType = .noBorder
+            promptScroll.wantsLayer = true
+            promptScroll.layer?.cornerRadius = DT.radiusSm
+            promptScroll.layer?.borderWidth = 1
+            promptScroll.layer?.borderColor = DT.borderLight.cgColor
+            let promptTV = NSTextView(frame: NSRect(x: 0, y: 0, width: cardW - cardInnerPad * 2, height: textAreaH))
+            promptTV.isEditable = true
+            promptTV.isSelectable = true
+            promptTV.isRichText = false
+            promptTV.font = NSFont.systemFont(ofSize: 12)
+            promptTV.isAutomaticQuoteSubstitutionEnabled = false
+            promptTV.isAutomaticDashSubstitutionEnabled = false
+            promptTV.isAutomaticTextReplacementEnabled = false
+            promptTV.textContainerInset = NSSize(width: 6, height: 6)
+            promptTV.drawsBackground = true
+            promptTV.backgroundColor = DT.bgMuted
+            promptTV.delegate = self
+            promptScroll.documentView = promptTV
+            personalityCard.addSubview(promptScroll)
+            self.personalityTextView = promptTV
+
+            let preset = PersonalityPreset(rawValue: SettingsManager.shared.personalityPreset) ?? .introvert
+            promptTV.string = (preset == .custom) ? SettingsManager.shared.customPersonality : preset.prompt
+            promptTV.textColor = DT.textPrimary
+        }
+
+        personalitySec.isHidden = (currentMode == 0)
+        y -= personalitySec.frame.height
+        personalitySec.frame.origin = NSPoint(x: 0, y: y)
+        aiCapTempViews.append(personalitySec)
+
+        y -= 20 // 底部留白
+
+        // 计算实际需要的内容高度
+        let usedHeight = height - y
+        let contentH = max(usedHeight, height)
+
+        // 如果内容超出容器，用 ScrollView
+        let pane = NSView(frame: NSRect(x: 0, y: 0, width: width, height: contentH))
+
+        // 把所有子视图加入 pane，并将坐标从 height 坐标系转到 contentH 坐标系
+        let dy = contentH - height
+        for v in aiCapTempViews {
+            v.frame.origin.y += dy
+            pane.addSubview(v)
+        }
+        aiCapTempViews.removeAll()
+
+        if contentH > height {
+            let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+            scrollView.hasVerticalScroller = true
+            scrollView.autohidesScrollers = true
+            scrollView.drawsBackground = false
+            scrollView.borderType = .noBorder
+            scrollView.documentView = pane
+            // 滚动到顶部
+            if let docView = scrollView.documentView {
+                docView.scroll(NSPoint(x: 0, y: docView.frame.height - scrollView.contentSize.height))
+            }
+            return scrollView
+        }
+
         return pane
+    }
+    // 临时收集 AI 能力 Tab 子视图
+    private var aiCapTempViews: [NSView] = []
+
+    private func addPageTitle(_ title: String, toCollection views: inout [NSView], width: CGFloat, at y: inout CGFloat, pad: CGFloat) {
+        y -= 48
+        let label = NSTextField(labelWithString: title)
+        label.frame = NSRect(x: pad, y: y, width: 300, height: 26)
+        label.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        label.textColor = DT.textPrimary
+        views.append(label)
+        y -= 16
     }
 
     private func buildModeCard(index: Int, title: String, desc: String, badge: String, badgeType: Int, isActive: Bool, width: CGFloat) -> NSView {
@@ -718,6 +901,18 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
     @objc func switchToBasicMode(_ sender: NSButton) {
         let oldMode = SettingsManager.shared.aiMode
         if oldMode == 0 { return }
+
+        // 从助手模式切走需要确认（会断开 OpenClaw）
+        if oldMode == 2 {
+            let alert = NSAlert()
+            alert.messageText = "切换到基础模式"
+            alert.informativeText = "将断开 OpenClaw 连接，AI 能力将不可用。确定切换？"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "切换")
+            alert.addButton(withTitle: "取消")
+            if alert.runModal() != .alertFirstButtonReturn { return }
+        }
+
         SettingsManager.shared.aiMode = 0
         onAIModeChanged?(oldMode, 0)
         rebuildAICapabilityPane()
@@ -746,7 +941,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         guard let parentWindow = window else { return }
 
         let sheetW: CGFloat = 420
-        let sheetH: CGFloat = 340
+        let sheetH: CGFloat = 180
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: sheetW, height: sheetH),
                              styleMask: [.titled], backing: .buffered, defer: false)
         sheet.title = "配置聪明模式"
@@ -789,45 +984,7 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         root.addSubview(keyField)
         self.apiKeyField = keyField
 
-        y -= 36
-
-        // 宠物性格
-        let personalityLabel = NSTextField(labelWithString: "宠物性格")
-        personalityLabel.frame = NSRect(x: pad, y: y, width: labelW, height: 20)
-        personalityLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        personalityLabel.textColor = DT.textPrimary
-        root.addSubview(personalityLabel)
-
-        let pPopup = NSPopUpButton(frame: NSRect(x: controlX, y: y - 3, width: 120, height: 26))
-        for preset in PersonalityPreset.allCases {
-            pPopup.addItem(withTitle: preset.displayName)
-        }
-        pPopup.selectItem(at: SettingsManager.shared.personalityPreset)
-        pPopup.target = self
-        pPopup.action = #selector(personalityChanged)
-        root.addSubview(pPopup)
-        self.personalityPopup = pPopup
-
-        y -= 80
-
-        let promptScroll = NSScrollView(frame: NSRect(x: controlX, y: y, width: sheetW - controlX - pad, height: 68))
-        promptScroll.hasVerticalScroller = true
-        promptScroll.borderType = .bezelBorder
-        let promptTV = NSTextView(frame: NSRect(x: 0, y: 0, width: sheetW - controlX - pad, height: 68))
-        promptTV.isEditable = true
-        promptTV.isSelectable = true
-        promptTV.isRichText = false
-        promptTV.font = NSFont.systemFont(ofSize: 12)
-        promptTV.isAutomaticQuoteSubstitutionEnabled = false
-        promptTV.isAutomaticDashSubstitutionEnabled = false
-        promptTV.isAutomaticTextReplacementEnabled = false
-        promptTV.textContainerInset = NSSize(width: 4, height: 4)
-        promptTV.string = PersonalityPreset.currentPrompt()
-        promptScroll.documentView = promptTV
-        root.addSubview(promptScroll)
-        self.personalityTextView = promptTV
-
-        y -= 20
+        y -= 28
 
         // 测试结果
         let testResult = NSTextField(labelWithString: "")
@@ -837,8 +994,6 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         testResult.lineBreakMode = .byTruncatingTail
         root.addSubview(testResult)
         self.aiTestResultLabel = testResult
-
-        y -= 16
 
         // 底部按钮
         let cancelBtn = NSButton(frame: NSRect(x: sheetW - 240, y: 14, width: 80, height: 32))
@@ -872,8 +1027,6 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
 
         SettingsManager.shared.aiProvider = aiProviderPopup?.indexOfSelectedItem ?? 0
         SettingsManager.shared.apiKey = key
-        SettingsManager.shared.personalityPreset = personalityPopup?.indexOfSelectedItem ?? 0
-        SettingsManager.shared.customPersonality = personalityTextView?.string ?? ""
 
         dismissConfigSheet()
         rebuildAICapabilityPane()
@@ -889,9 +1042,6 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         }
         let tokenValue = openclawTokenField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !tokenValue.isEmpty { SettingsManager.shared.openclawToken = tokenValue }
-        let userIdValue = dingtalkUserIdField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        SettingsManager.shared.dingtalkUserId = userIdValue
-
         dismissConfigSheet()
         rebuildAICapabilityPane()
     }
@@ -915,10 +1065,6 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         let oldKey = SettingsManager.shared.apiKey
         SettingsManager.shared.aiProvider = providerIdx
         SettingsManager.shared.apiKey = key
-
-        // 保存性格设置
-        SettingsManager.shared.personalityPreset = personalityPopup?.indexOfSelectedItem ?? 0
-        SettingsManager.shared.customPersonality = personalityTextView?.string ?? ""
 
         aiTestResultLabel?.stringValue = "验证中..."
         aiTestResultLabel?.textColor = DT.textSecondary
@@ -962,6 +1108,18 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         // 已启用时直接弹设置弹窗（保存配置）
         if isAlreadyActive {
             showAssistantModeSettingsSheet()
+            return
+        }
+
+        // 之前成功连接过且配置没变 → 跳过四步检查，直接重新连接
+        if let last = lastConnectedConfig,
+           last.host == settings.gatewayHost,
+           last.port == settings.gatewayPort,
+           last.token == settings.openclawToken {
+            let oldMode = settings.aiMode
+            settings.aiMode = 2
+            onAIModeChanged?(oldMode, 2)
+            rebuildAICapabilityPane()
             return
         }
 
@@ -1267,9 +1425,13 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         testGateway?.disconnect()
         testGateway = nil
 
+        // 记录成功连接的配置快照
+        let settings = SettingsManager.shared
+        lastConnectedConfig = (host: settings.gatewayHost, port: settings.gatewayPort, token: settings.openclawToken)
+
         // 切换模式（触发正式连接）
-        let oldMode = SettingsManager.shared.aiMode
-        SettingsManager.shared.aiMode = 2
+        let oldMode = settings.aiMode
+        settings.aiMode = 2
         onAIModeChanged?(oldMode, 2)
 
         // 关闭弹窗，刷新卡片
@@ -1381,6 +1543,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         let popup = NSPopUpButton(frame: NSRect(x: controlX, y: y - 3, width: 200, height: 26))
         popup.addItems(withTitles: ["键鼠输入检测", "Claude 进程监控"])
         popup.selectItem(at: SettingsManager.shared.monitorMode)
+        popup.target = self
+        popup.action = #selector(advancedControlChanged)
         pane.addSubview(popup)
         self.modePopup = popup
 
@@ -1426,39 +1590,29 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         cmdTV.isAutomaticTextReplacementEnabled = false
         cmdTV.string = SettingsManager.shared.terminalCommand
         cmdTV.textContainerInset = NSSize(width: 4, height: 4)
+        cmdTV.delegate = self
         cmdScroll.documentView = cmdTV
         pane.addSubview(cmdScroll)
         self.commandTextView = cmdTV
 
         y -= 20
 
-        let hint = NSTextField(labelWithString: "示例: cd ~/projects && export HTTPS_PROXY=http://127.0.0.1:7897 && claude")
-        hint.frame = NSRect(x: controlX, y: y, width: width - controlX - pad, height: 18)
+        let hint = NSTextField(wrappingLabelWithString: "示例: cd ~/projects && export HTTPS_PROXY=http://127.0.0.1:7897 && claude")
+        hint.frame = NSRect(x: controlX, y: y - 14, width: width - controlX - pad, height: 32)
         hint.font = NSFont.systemFont(ofSize: 11)
         hint.textColor = DT.textTertiary
+        hint.maximumNumberOfLines = 2
         pane.addSubview(hint)
 
-        y -= 36
-
-        // ── 钉钉 ──
-        let dtSep = NSBox(frame: NSRect(x: pad, y: y + 8, width: width - pad * 2, height: 1))
-        dtSep.boxType = .separator
-        pane.addSubview(dtSep)
-
-        addSectionTitle("钉钉集成", to: pane, at: &y, pad: pad, width: width)
-
-        let userIdLabel = NSTextField(labelWithString: "钉钉 UserId")
-        userIdLabel.frame = NSRect(x: pad, y: y, width: labelW, height: 20)
-        userIdLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        userIdLabel.textColor = DT.textPrimary
-        pane.addSubview(userIdLabel)
-
-        let userIdField = NSTextField(frame: NSRect(x: controlX, y: y - 2, width: width - controlX - pad, height: 24))
-        userIdField.stringValue = SettingsManager.shared.dingtalkUserId
-        userIdField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        userIdField.placeholderString = "可选，用于区分「我的私聊」和「别人私聊」"
-        pane.addSubview(userIdField)
-        self.dingtalkUserIdField = userIdField
+        // ── 底部保存按钮 ──
+        let saveBtnY: CGFloat = 16
+        let saveBtn = NSButton(frame: NSRect(x: width - pad - 90, y: saveBtnY, width: 90, height: 32))
+        saveBtn.title = "保存"
+        saveBtn.bezelStyle = .rounded
+        saveBtn.keyEquivalent = "\r"
+        saveBtn.target = self
+        saveBtn.action = #selector(saveAdvancedSettings)
+        pane.addSubview(saveBtn)
 
         return pane
     }
@@ -1493,9 +1647,17 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         } else {
             personalityTextView?.string = ""
         }
+        // 自动保存性格设置
+        savePersonalitySettings()
+    }
+
+    private func savePersonalitySettings() {
+        SettingsManager.shared.personalityPreset = personalityPopup?.indexOfSelectedItem ?? 0
+        SettingsManager.shared.customPersonality = personalityTextView?.string ?? ""
     }
 
     @objc func petModeSelectionChanged() {
+        markDirty(tab: 0)
         let idx = petModePopup?.indexOfSelectedItem ?? 0
         let isCustom = idx >= 1
         pickImageButton?.isEnabled = isCustom
@@ -1598,39 +1760,10 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
-    @objc func saveSettings() {
-        guard let command = commandTextView?.string, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        SettingsManager.shared.terminalCommand = command
-
+    // MARK: - 宠物 Tab 保存
+    @objc func savePetSettings() {
         let name = petNameField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? "皮皮"
         SettingsManager.shared.petName = name.isEmpty ? "皮皮" : name
-
-        // 说话方式
-        let newSpeechMode = speechModePopup?.indexOfSelectedItem ?? 0
-        if newSpeechMode == 1 && SettingsManager.shared.aiMode == 0 {
-            let alert = NSAlert()
-            alert.messageText = "需要先启用 AI 能力"
-            alert.informativeText = "使用 AI 生成碎碎念前，请先在「AI 能力」中启用聪明模式或助手模式。"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "前往设置")
-            alert.addButton(withTitle: "取消")
-            if alert.runModal() == .alertFirstButtonReturn {
-                sidebarTableView?.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
-                switchTab(to: 1)
-            }
-            return
-        }
-        SettingsManager.shared.speechMode = newSpeechMode
-
-        let newMode = modePopup?.indexOfSelectedItem ?? 0
-        let oldMode = SettingsManager.shared.monitorMode
-        SettingsManager.shared.monitorMode = newMode
-        if newMode != oldMode {
-            onMonitorModeChanged?(newMode)
-        }
-
-        SettingsManager.shared.activityRange = rangePopup?.indexOfSelectedItem ?? 0
-        SettingsManager.shared.workingEffect = workingEffectPopup?.indexOfSelectedItem ?? 0
 
         let newSizeIdx = sizePopup?.indexOfSelectedItem ?? 0
         let oldSizeIdx = SettingsManager.shared.petSizeIndex
@@ -1639,9 +1772,8 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
             onPetSizeChanged?()
         }
 
-        // 钉钉 UserId（高级 tab）
-        let userIdValue = dingtalkUserIdField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        SettingsManager.shared.dingtalkUserId = userIdValue
+        SettingsManager.shared.workingEffect = workingEffectPopup?.indexOfSelectedItem ?? 0
+        SettingsManager.shared.activityRange = rangePopup?.indexOfSelectedItem ?? 0
 
         let newPetMode = petModePopup?.indexOfSelectedItem ?? 0
         let oldPetMode = SettingsManager.shared.petMode
@@ -1659,35 +1791,145 @@ class SettingsWindowController: NSObject, NSWindowDelegate, NSTableViewDataSourc
             onPetModeChanged?(newPetMode)
         }
 
-        window?.close()
+        dirtyTabs.remove(0)
     }
 
-    @objc func resetSettings() {
-        commandTextView?.string = "cd ~"
-        SettingsManager.shared.terminalCommand = "cd ~"
-        modePopup?.selectItem(at: 0)
-        SettingsManager.shared.monitorMode = 0
-        rangePopup?.selectItem(at: 0)
-        SettingsManager.shared.activityRange = 0
-        sizePopup?.selectItem(at: 0)
-        SettingsManager.shared.petSizeIndex = 0
-        workingEffectPopup?.selectItem(at: 0)
-        SettingsManager.shared.workingEffect = 0
-        petModePopup?.selectItem(at: 0)
-        SettingsManager.shared.petMode = 0
-        pickImageButton?.isEnabled = false
-        petNameField?.stringValue = "皮皮"
-        speechModePopup?.selectItem(at: 0)
-        SettingsManager.shared.speechMode = 0
-        updateAIStatusLabel()
-        // 重置 AI 模式
-        let oldMode = SettingsManager.shared.aiMode
-        if oldMode != 0 {
-            SettingsManager.shared.aiMode = 0
-            onAIModeChanged?(oldMode, 0)
+    // MARK: - 碎碎念 Tab 保存
+    @objc func saveSpeechSettings() {
+        let newSpeechMode = speechModePopup?.indexOfSelectedItem ?? 0
+        if newSpeechMode == 1 && SettingsManager.shared.aiMode == 0 {
+            let alert = NSAlert()
+            alert.messageText = "需要先启用 AI 能力"
+            alert.informativeText = "使用 AI 生成碎碎念前，请先在「AI 能力」中启用聪明模式或助手模式。"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "前往设置")
+            alert.addButton(withTitle: "取消")
+            if alert.runModal() == .alertFirstButtonReturn {
+                sidebarTableView?.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+                switchTab(to: 1)
+            }
+            return
         }
-        SettingsManager.shared.dingtalkUserId = ""
-        rebuildAICapabilityPane()
+        SettingsManager.shared.speechMode = newSpeechMode
+        dirtyTabs.remove(2)
+        updateAIStatusLabel()
+    }
+
+    // MARK: - 高级 Tab 保存
+    @objc func saveAdvancedSettings() {
+        guard let command = commandTextView?.string, !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        SettingsManager.shared.terminalCommand = command
+
+        let newMode = modePopup?.indexOfSelectedItem ?? 0
+        let oldMode = SettingsManager.shared.monitorMode
+        SettingsManager.shared.monitorMode = newMode
+        if newMode != oldMode {
+            onMonitorModeChanged?(newMode)
+        }
+
+        dirtyTabs.remove(3)
+    }
+
+    // MARK: - 脏状态管理
+
+    /// 记录哪些 tab 有未保存的修改（tab index）
+    private var dirtyTabs: Set<Int> = []
+    private var currentTabIndex: Int = 0
+    private var isReverting = false
+
+    func markDirty(tab: Int) {
+        guard !isReverting else { return }
+        dirtyTabs.insert(tab)
+    }
+
+    /// 恢复 tab 的 UI 控件到 SettingsManager 中的实际保存值
+    private func revertTab(_ tab: Int) {
+        isReverting = true
+        defer { isReverting = false }
+        let s = SettingsManager.shared
+        switch tab {
+        case 0: // 宠物
+            petNameField?.stringValue = s.petName
+            petModePopup?.selectItem(at: s.petMode)
+            sizePopup?.selectItem(at: s.petSizeIndex)
+            workingEffectPopup?.selectItem(at: s.workingEffect)
+            rangePopup?.selectItem(at: s.activityRange)
+            petModeSelectionChanged()
+        case 2: // 碎碎念
+            speechModePopup?.selectItem(at: s.speechMode)
+            updateAIStatusLabel()
+        case 3: // 高级
+            modePopup?.selectItem(at: s.monitorMode)
+            commandTextView?.string = s.terminalCommand
+        default:
+            break
+        }
+    }
+
+    /// 通用控件变更标脏（宠物 tab=0 的 popups）
+    @objc func petControlChanged(_ sender: Any?) {
+        markDirty(tab: 0)
+    }
+
+    /// 高级 tab=3 的 popups
+    @objc func advancedControlChanged(_ sender: Any?) {
+        markDirty(tab: 3)
+    }
+
+    // NSTextFieldDelegate — 文本框编辑时标脏
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        if field === petNameField {
+            markDirty(tab: 0)
+        }
+    }
+
+    // NSTextDelegate — NSTextView 编辑时标脏（终端命令）
+    func textDidChange(_ notification: Notification) {
+        if let tv = notification.object as? NSTextView, tv === commandTextView {
+            markDirty(tab: 3)
+        } else if let tv = notification.object as? NSTextView, tv === personalityTextView {
+            savePersonalitySettings()
+        }
+    }
+
+    /// 检查当前 tab 是否有未保存修改，如有则弹提示。返回 true 表示可以继续操作。
+    private func checkUnsavedChanges(forTab tab: Int) -> Bool {
+        guard dirtyTabs.contains(tab) else { return true }
+        let tabNames = ["宠物", "AI 能力", "碎碎念", "高级"]
+        let alert = NSAlert()
+        alert.messageText = "「\(tabNames[tab])」设置未保存"
+        alert.informativeText = "继续操作将丢失修改，是否先保存？"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            // 保存
+            switch tab {
+            case 0: savePetSettings()
+            case 2: saveSpeechSettings()
+            case 3: saveAdvancedSettings()
+            default: break
+            }
+            return true
+        } else if response == .alertSecondButtonReturn {
+            // 不保存，恢复 UI 到实际保存的值
+            revertTab(tab)
+            dirtyTabs.remove(tab)
+            return true
+        } else {
+            // 取消
+            return false
+        }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if let dirty = dirtyTabs.first {
+            return checkUnsavedChanges(forTab: dirty)
+        }
+        return true
     }
 
     func windowWillClose(_ notification: Notification) {

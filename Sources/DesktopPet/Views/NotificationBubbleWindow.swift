@@ -35,7 +35,7 @@ class NotificationBubbleWindow: NSWindow {
                    styleMask: .borderless, backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
-        level = .floating
+        level = .statusBar
         hasShadow = false
         ignoresMouseEvents = false  // 可点击
 

@@ -27,6 +27,9 @@ class OpenClawGateway: AgentGateway {
     private var shouldReconnect = false
     private var requestCounter = 0
     private let sessionPrefix = UUID().uuidString.prefix(8)
+    private var pendingNonce: String?
+    /// 设备配对等待审批中
+    var onPairingRequired: (() -> Void)?
 
     // AgentGateway 协议
     var onMessage: ((ChatEvent) -> Void)?
@@ -69,7 +72,10 @@ class OpenClawGateway: AgentGateway {
     // MARK: - 内部连接
 
     private func doConnect() {
-        guard shouldReconnect else { return }
+        guard shouldReconnect else {
+            NSLog("[OpenClaw] doConnect skipped: shouldReconnect=false")
+            return
+        }
 
         let url = URL(string: "ws://\(host):\(port)")!
         let session = URLSession(configuration: .default)
@@ -78,7 +84,7 @@ class OpenClawGateway: AgentGateway {
         self.webSocketTask = task
         task.resume()
 
-        NSLog("[OpenClaw] Connecting to ws://\(host):\(port)...")
+        NSLog("[OpenClaw] Connecting to ws://\(host):\(port)... (hasDeviceToken=%@)", DeviceIdentity.shared.deviceToken != nil ? "yes" : "no")
 
         // 开始接收消息，等待 challenge
         receiveMessages()
@@ -131,6 +137,11 @@ class OpenClawGateway: AgentGateway {
         case "event":
             guard let event = json["event"] as? String else { return }
             if event == "connect.challenge" {
+                // 保存 nonce 用于签名
+                if let payload = json["payload"] as? [String: Any],
+                   let nonce = payload["nonce"] as? String {
+                    self.pendingNonce = nonce
+                }
                 // 收到 challenge = WebSocket 物理连接成功
                 DispatchQueue.main.async { [weak self] in
                     self?.onChallengeReceived?()
@@ -143,7 +154,8 @@ class OpenClawGateway: AgentGateway {
 
         case "res":
             // 先检查 pendingResponses（chat.send 的回调）
-            if let reqId = json["id"] as? String, let callback = pendingResponses.removeValue(forKey: reqId) {
+            let resId = json["id"] as? String
+            if let reqId = resId, let callback = pendingResponses.removeValue(forKey: reqId) {
                 let ok = json["ok"] as? Bool ?? false
                 let errorMsg = (json["error"] as? [String: Any])?["message"] as? String
                 DispatchQueue.main.async {
@@ -156,19 +168,43 @@ class OpenClawGateway: AgentGateway {
                let payloadType = payload["type"] as? String,
                payloadType == "hello-ok" {
                 NSLog("[OpenClaw] Connected! Protocol v3 handshake OK")
+                // 保存 Gateway 颁发的 deviceToken
+                if let auth = payload["auth"] as? [String: Any],
+                   let deviceToken = auth["deviceToken"] as? String {
+                    DeviceIdentity.shared.deviceToken = deviceToken
+                    NSLog("[OpenClaw] Device token received and saved")
+                }
                 reconnectDelay = 2.0
                 setConnected(true)
                 loadAgentIdentity()
             } else if let ok = json["ok"] as? Bool, !ok {
-                let errorMsg: String
-                if let error = json["error"] as? [String: Any],
-                   let message = error["message"] as? String {
-                    errorMsg = message
-                    NSLog("[OpenClaw] Connect rejected: %@", message)
-                } else {
-                    errorMsg = "连接被拒绝"
-                    NSLog("[OpenClaw] Connect rejected (no detail)")
+                let error = json["error"] as? [String: Any]
+                let errorMsg = error?["message"] as? String ?? "连接被拒绝"
+                let details = error?["details"] as? [String: Any]
+                let errorCode = details?["code"] as? String
+
+                NSLog("[OpenClaw] Connect rejected: %@ (code: %@)", errorMsg, errorCode ?? "nil")
+
+                // 设备配对等待审批
+                if errorCode == "PAIRING_REQUIRED" || errorMsg.contains("pairing") {
+                    NSLog("[OpenClaw] Device pairing required — waiting for approval")
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onPairingRequired?()
+                    }
+                    // 不断开连接，等待审批后 Gateway 会发 hello-ok
+                    return
                 }
+
+                // AUTH_TOKEN_MISMATCH：可能 deviceToken 过期，清除后重试
+                if errorCode == "AUTH_TOKEN_MISMATCH" || errorCode == "AUTH_DEVICE_TOKEN_MISMATCH" {
+                    if DeviceIdentity.shared.deviceToken != nil {
+                        NSLog("[OpenClaw] Token mismatch, clearing device token and retrying")
+                        DeviceIdentity.shared.deviceToken = nil
+                        handleDisconnect()
+                        return
+                    }
+                }
+
                 DispatchQueue.main.async { [weak self] in
                     self?.onConnectRejected?(errorMsg)
                 }
@@ -180,32 +216,78 @@ class OpenClawGateway: AgentGateway {
         }
     }
 
+    private let clientId = "openclaw-macos"
+    private let clientMode = "ui"
+    private let connectRole = "operator"
+    private let connectScopes = ["operator.read", "operator.write"]
+
     private func sendConnect() {
         requestCounter += 1
         let reqId = "pet-\(sessionPrefix)-\(requestCounter)"
+        self.connectReqId = reqId
+
+        let identity = DeviceIdentity.shared
+        let nonce = pendingNonce ?? ""
+        let clientPlatform = "macos"
+
+        // Gateway resolveSignatureToken 取 auth.token ?? auth.deviceToken
+        // 签名时的 token 必须和 auth 里第一个非空 token 一致
+        var authBlock: [String: Any]
+        let signatureToken: String
+        if let dt = identity.deviceToken {
+            // 有 deviceToken：auth.token 留空，auth.deviceToken = dt
+            // resolveSignatureToken 会取 deviceToken
+            authBlock = ["deviceToken": dt]
+            signatureToken = dt
+        } else {
+            // 无 deviceToken：用共享 token
+            authBlock = ["token": token]
+            signatureToken = token
+        }
+
+        let signed = identity.signConnectChallenge(
+            clientId: clientId,
+            clientMode: clientMode,
+            role: connectRole,
+            scopes: connectScopes,
+            token: signatureToken,
+            nonce: nonce,
+            platform: clientPlatform
+        )
+
+        let params: [String: Any] = [
+            "minProtocol": 3,
+            "maxProtocol": 3,
+            "client": [
+                "id": clientId,
+                "version": "1.0.0",
+                "platform": clientPlatform,
+                "mode": clientMode
+            ],
+            "role": connectRole,
+            "scopes": connectScopes,
+            "auth": authBlock,
+            "device": [
+                "id": identity.deviceId,
+                "publicKey": identity.publicKeyBase64Url,
+                "signature": signed.signature,
+                "signedAt": signed.signedAt,
+                "nonce": nonce
+            ] as [String: Any]
+        ]
 
         let connectReq: [String: Any] = [
             "type": "req",
             "id": reqId,
             "method": "connect",
-            "params": [
-                "minProtocol": 3,
-                "maxProtocol": 3,
-                "client": [
-                    "id": "openclaw-macos",
-                    "version": "1.0.0",
-                    "platform": "macos",
-                    "mode": "ui"
-                ],
-                "role": "operator",
-                "auth": [
-                    "token": token
-                ]
-            ]
+            "params": params
         ]
 
         sendJSON(connectReq)
+        NSLog("[OpenClaw] Sent connect with device identity (deviceId=%@)", String(identity.deviceId.prefix(16)))
     }
+
+    private var connectReqId: String?
 
     private func handleChatEvent(_ json: [String: Any]) {
         // 调试：打印 chat 事件的完整 payload

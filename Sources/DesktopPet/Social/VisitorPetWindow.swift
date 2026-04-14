@@ -60,9 +60,10 @@ class VisitorPetWindow {
     }
 
     /// 显示对话气泡
-    func showBubble(text: String) {
+    func showBubble(text: String, isDelivery: Bool = false) {
         guard let win = window else { return }
-        bubbleWindow?.show(text: text, above: win)
+        let duration: TimeInterval = isDelivery ? 8 : 4.5
+        bubbleWindow?.show(text: text, above: win, duration: duration, isDelivery: isDelivery)
     }
 
     /// 离场动画，完成后移除

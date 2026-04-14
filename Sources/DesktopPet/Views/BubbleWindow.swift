@@ -6,7 +6,8 @@ class BubbleWindow: NSWindow {
     private var textField: NSTextField!
     private var hideTimer: Timer?
     private weak var followingWindow: NSWindow?
-    private var followTimer: Timer?
+    private(set) var isShowingDelivery = false  // 带话气泡期间不被普通气泡打断
+    private var showGeneration: Int = 0  // 防止异步 hide 关掉新气泡
 
     // 阴影需要额外空间，窗口比气泡本体大一圈
     private let shadowPad: CGFloat = 14
@@ -17,7 +18,7 @@ class BubbleWindow: NSWindow {
                    styleMask: .borderless, backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
-        level = .floating
+        level = .statusBar
         hasShadow = false
         ignoresMouseEvents = true
 
@@ -38,22 +39,48 @@ class BubbleWindow: NSWindow {
         contentView = container
     }
 
-    func show(text: String, above petWindow: NSWindow) {
+    /// isDelivery: 带话样式（深暖棕背景、支持换行）
+    func show(text: String, above petWindow: NSWindow, duration: TimeInterval = 4.5, isDelivery: Bool = false) {
+        // 带话气泡期间，普通气泡不能打断
+        if isShowingDelivery && !isDelivery { return }
+
+        // 强制清理上一次状态（取消动画中的 hide）
+        hideTimer?.invalidate()
+        hideTimer = nil
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+        }
+        if let oldParent = followingWindow {
+            oldParent.removeChildWindow(self)
+        }
+        alphaValue = 0
+
+        showGeneration += 1
+        isShowingDelivery = isDelivery
         followingWindow = petWindow
-        textField.stringValue = text
 
         let font = textField.font ?? NSFont.systemFont(ofSize: 12)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let maxTextW: CGFloat = isDelivery ? 220 : CGFloat.greatestFiniteMagnitude
+        let maxLines = isDelivery ? 5 : 1
+
+        // 带话模式：支持换行
+        textField.maximumNumberOfLines = maxLines
+        textField.lineBreakMode = isDelivery ? .byWordWrapping : .byClipping
+        textField.cell?.wraps = isDelivery
+        textField.textColor = isDelivery ? NSColor.white : DT.textPrimary
+        textField.stringValue = text
+
         let textSize = (text as NSString).boundingRect(
-            with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: 20),
+            with: NSSize(width: maxTextW, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attrs
         )
 
         let bodyW = ceil(textSize.width) + 48
-        let bodyH = bubbleH
+        let bodyH = isDelivery ? max(bubbleH, ceil(textSize.height) + 20) : bubbleH
+        let cornerRadius = isDelivery ? min(bodyH / 2, 16) : bodyH / 2
         let pad = shadowPad
-        // 窗口尺寸 = 气泡 + 四周阴影留白
         let winW = bodyW + pad * 2
         let winH = bodyH + pad * 2
 
@@ -71,27 +98,35 @@ class BubbleWindow: NSWindow {
             let bg = CALayer()
             bg.name = "bubble"
             bg.frame = NSRect(x: pad, y: pad, width: bodyW, height: bodyH)
-            bg.cornerRadius = bodyH / 2
+            bg.cornerRadius = cornerRadius
             bg.masksToBounds = false
-            bg.backgroundColor = NSColor(red: 0xFD/255, green: 0xFA/255, blue: 0xF6/255, alpha: 1).cgColor
-            bg.borderWidth = 0.5
-            bg.borderColor = DT.borderDefault.cgColor
-            // 阴影：四周均匀扩散
+            if isDelivery {
+                // 深暖棕色背景
+                bg.backgroundColor = NSColor(red: 0x8B/255, green: 0x6E/255, blue: 0x55/255, alpha: 1).cgColor
+                bg.borderWidth = 0
+            } else {
+                bg.backgroundColor = NSColor(red: 0xFD/255, green: 0xFA/255, blue: 0xF6/255, alpha: 1).cgColor
+                bg.borderWidth = 0.5
+                bg.borderColor = DT.borderDefault.cgColor
+            }
             bg.shadowColor = NSColor(red: 0.25, green: 0.20, blue: 0.15, alpha: 1).cgColor
             bg.shadowOffset = .zero
             bg.shadowRadius = 8
-            bg.shadowOpacity = 0.15
+            bg.shadowOpacity = isDelivery ? 0.25 : 0.15
             container.layer?.insertSublayer(bg, at: 0)
         }
 
         // 文字居中于气泡本体
-        let textH = ceil(textField.intrinsicContentSize.height)
+        let textH = ceil(textSize.height)
         let textY = pad + (bodyH - textH) / 2
         textField.frame = NSRect(x: pad + 18, y: textY, width: bodyW - 36, height: textH)
 
         updatePosition()
 
-        // 淡入
+        if let parent = followingWindow {
+            parent.addChildWindow(self, ordered: .above)
+        }
+
         alphaValue = 0
         orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -99,13 +134,8 @@ class BubbleWindow: NSWindow {
             self.animator().alphaValue = 1
         }
 
-        followTimer?.invalidate()
-        followTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60, repeats: true) { [weak self] _ in
-            self?.updatePosition()
-        }
-
         hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: 4.5, repeats: false) { [weak self] _ in
+        hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
             self?.hideBubble()
         }
     }
@@ -119,9 +149,7 @@ class BubbleWindow: NSWindow {
         let winH = frame.height
         let pad = shadowPad
 
-        // 气泡本体中心对齐宠物中心，再减去左侧 padding
         var x = petFrame.midX - winW / 2
-        // 气泡底边对齐宠物头顶（窗口上方约40%是透明区域）
         let petH = petFrame.height
         var y = petFrame.maxY - petH * 0.4 - pad
 
@@ -136,13 +164,17 @@ class BubbleWindow: NSWindow {
     func hideBubble() {
         hideTimer?.invalidate()
         hideTimer = nil
-        followTimer?.invalidate()
-        followTimer = nil
+        isShowingDelivery = false
+        let gen = showGeneration
+        let parent = followingWindow
         followingWindow = nil
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.3
             self.animator().alphaValue = 0
         }, completionHandler: {
+            // 如果在动画期间又调了 show()，不要关掉新气泡
+            guard gen == self.showGeneration else { return }
+            parent?.removeChildWindow(self)
             self.orderOut(nil)
         })
     }

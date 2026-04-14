@@ -293,7 +293,23 @@ class FriendListPanel: NSWindowController {
 
     @objc private func visitFriend(_ sender: NSButton) {
         guard let code = sender.identifier?.rawValue else { return }
-        SocialManager.shared.requestVisit(to: code)
+
+        // 弹出带话输入面板
+        let alert = NSAlert()
+        alert.messageText = "串门带话"
+        alert.informativeText = "给对方带句话吧（可选，最多50字）"
+        alert.addButton(withTitle: "出发")
+        alert.addButton(withTitle: "取消")
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        inputField.placeholderString = "想说点什么..."
+        inputField.font = NSFont.systemFont(ofSize: 13)
+        alert.accessoryView = inputField
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let msg = String(inputField.stringValue.prefix(50)).trimmingCharacters(in: .whitespacesAndNewlines)
+        SocialManager.shared.requestVisit(to: code, message: msg.isEmpty ? nil : msg)
         window?.orderOut(nil)
     }
 

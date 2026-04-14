@@ -103,6 +103,7 @@ class MQTTService: NSObject {
         let payload: [String: Any] = [
             "type": online ? "online" : "offline",
             "from": code,
+            "name": SettingsManager.shared.petName,
             "ts": Int(Date().timeIntervalSince1970)
         ]
         publish(topic: statusTopic(for: code), payload: payload, retained: true)

@@ -51,14 +51,14 @@ if [ -d "${SPM_BUNDLE}" ]; then
     cp -R "${SPM_BUNDLE}" "${APP_DIR}/Contents/Resources/"
     # 清理不需要的文件（mp4 源视频、DS_Store）
     find "${APP_DIR}/Contents/Resources/DesktopPet_DesktopPet.bundle" \
-        \( -name "*.mp4" -o -name ".DS_Store" \) -delete
+        \( -name "*.mp4" -o -name ".DS_Store" -o -name "*.icns" \) -delete
     echo "  ✓ 已复制 SPM 资源 bundle（已清理 mp4/DS_Store）"
 fi
 
 # 直接复制资源文件到 Resources（排除 mp4、DS_Store、临时文件）
 if [ -d "${RESOURCES_SRC}" ]; then
-    find "${RESOURCES_SRC}" -maxdepth 1 \( -name "*.png" -o -name "*.gif" \) -exec cp {} "${APP_DIR}/Contents/Resources/" \;
-    echo "  ✓ 已复制动画资源 (PNG/GIF)"
+    find "${RESOURCES_SRC}" -maxdepth 1 -name "*.icns" -exec cp {} "${APP_DIR}/Contents/Resources/" \;
+    echo "  ✓ 已复制图标资源 (ICNS)"
 fi
 
 # 创建 PkgInfo
@@ -90,6 +90,8 @@ cat > "${APP_DIR}/Contents/Info.plist" << PLIST
     <string>6.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>${MIN_MACOS}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
